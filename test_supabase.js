@@ -9,7 +9,7 @@ const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 async function test() {
   console.log("Testing insert...");
-  const { data: iData, error: iError } = await supabase
+  const { error: iError } = await supabase
     .from('deal_analyses')
     .upsert({
       deal_id: "99999",

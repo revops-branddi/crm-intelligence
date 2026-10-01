@@ -1,6 +1,10 @@
 {
   "rewrites": [
     {
+      "source": "/api/pipedrive-v2/:path*",
+      "destination": "https://api.pipedrive.com/api/v2/:path*"
+    },
+    {
       "source": "/api/pipedrive/:path*",
       "destination": "https://api.pipedrive.com/v1/:path*"
     },

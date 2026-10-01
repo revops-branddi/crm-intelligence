@@ -1,15 +1,15 @@
 import React from 'react';
 import {
-  Settings, Database, LayoutDashboard, Target, Search, Users,
+  Settings, Database, LayoutDashboard, Target, Building2, Users,
   BookOpen, Zap, ChevronRight
 } from 'lucide-react';
 
-const SidebarIcon = ({ icon: Icon, label, id, active, onClick }) => (
+const SidebarIcon = ({ icon, label, id, active, onClick }) => (
   <div
     onClick={() => onClick(id)}
     className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors cursor-pointer ${active ? 'bg-branddi-cyan text-branddi-navy font-bold' : 'text-slate-400 hover:bg-slate-800'}`}
   >
-    <Icon size={20} />
+    {React.createElement(icon, { size: 20 })}
     <span className="text-sm font-medium">{label}</span>
   </div>
 );
@@ -38,6 +38,7 @@ export const Sidebar = ({ activeTab, setActiveTab, analysis, user, onLogout }) =
       <div className={`pt-4 ${!analysis ? 'opacity-40 pointer-events-none' : ''}`}>
         <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider px-4 mb-2">Análise 360</p>
         <SidebarIcon icon={LayoutDashboard} label="Visão Geral" id="dashboard" active={activeTab === 'dashboard'} onClick={setActiveTab} />
+        <SidebarIcon icon={Building2} label="Empresa / Marca" id="empresa" active={activeTab === 'empresa'} onClick={setActiveTab} />
         <SidebarIcon icon={BookOpen} label="Abordagem (Pitch)" id="estrategia" active={activeTab === 'estrategia'} onClick={setActiveTab} />
         <SidebarIcon icon={Users} label="Stakeholders" id="participantes" active={activeTab === 'participantes'} onClick={setActiveTab} />
         <SidebarIcon icon={Target} label="Cronologia" id="timeline" active={activeTab === 'timeline'} onClick={setActiveTab} />

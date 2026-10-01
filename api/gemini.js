@@ -92,6 +92,10 @@ export default async function handler(req, res) {
         - Gere um score de 0 a 100, considerando o engajamento recente.
         - Faça auditoria ortográfica e gramatical APENAS nos e-mails e históricos de conversa (WhatsApp, LinkedIn) do vendedor, apontando erros relevantes. NÃO considere notas internas para auditoria.
         - Inclua informações sobre a empresa do lead: contexto geral, momento atual, desafios, oportunidades, e qualquer menção relevante no histórico.
+        - Para "perfilEmpresa", use SOMENTE o bloco "DADOS DA EMPRESA NO CRM" e evidências explícitas do histórico. Não faça pesquisa externa, não complete lacunas por conhecimento geral e não transforme hipótese em fato.
+        - "perfilEmpresa" é obrigatório: preencha todos os campos. Quando um dado não existir, use texto vazio ou array vazio no respectivo campo e registre a pergunta objetiva em "lacunas".
+        - Cada item de "evidencias" precisa apontar a fonte exata: "CRM — organização" ou "Histórico do deal — DD/MM/AAAA". Nunca use fonte genérica, URL externa ou memória do modelo.
+        - O "resumo" da empresa deve ser uma síntese factual e curta, útil antes de uma abordagem; não inclua recomendação comercial nele.
         - Alerte sobre sazonalidades próximas que justifiquem urgência na abordagem.
 
         2. Participantes:
@@ -214,6 +218,22 @@ export default async function handler(req, res) {
       },
       contornosObjecoes: { type: "ARRAY", items: { type: "OBJECT", properties: { objecao: { type: "STRING" }, contornoPersonalizado: { type: "STRING" }, dadosDoDeal: { type: "STRING" } } } },
       produtoRecomendado: { type: "OBJECT", properties: { produto: { type: "STRING" }, justificativa: { type: "STRING" } } },
+      perfilEmpresa: {
+        type: "OBJECT",
+        properties: {
+          resumo: { type: "STRING" },
+          oQueFaz: { type: "STRING" },
+          modeloNegocio: { type: "STRING" },
+          produtosServicos: { type: "ARRAY", items: { type: "STRING" } },
+          canaisVenda: { type: "ARRAY", items: { type: "STRING" } },
+          abrangencia: { type: "STRING" },
+          grupoEmpresarial: { type: "STRING" },
+          outrasMarcas: { type: "ARRAY", items: { type: "STRING" } },
+          evidencias: { type: "ARRAY", items: { type: "OBJECT", properties: { afirmacao: { type: "STRING" }, fonte: { type: "STRING" } }, required: ["afirmacao", "fonte"] } },
+          lacunas: { type: "ARRAY", items: { type: "STRING" } }
+        },
+        required: ["resumo", "oQueFaz", "modeloNegocio", "produtosServicos", "canaisVenda", "abrangencia", "grupoEmpresarial", "outrasMarcas", "evidencias", "lacunas"]
+      },
       prontidaoReuniao: {
         type: "OBJECT",
         properties: {
@@ -268,7 +288,7 @@ export default async function handler(req, res) {
         }
       }
     },
-    required: ["personas", "dores", "objecoes", "resumo", "sentimento", "score", "proximosPassos", "prospeccao", "participantesMapa", "mensagensPersonalizadas", "contornosObjecoes", "produtoRecomendado", "prontidaoReuniao", "avaliacaoSLA", "gatilhosUrgencia", "analiseComparativaSDRs", "cronologiaInteligente"]
+    required: ["personas", "dores", "objecoes", "resumo", "sentimento", "score", "proximosPassos", "prospeccao", "participantesMapa", "mensagensPersonalizadas", "contornosObjecoes", "produtoRecomendado", "perfilEmpresa", "prontidaoReuniao", "avaliacaoSLA", "gatilhosUrgencia", "analiseComparativaSDRs", "cronologiaInteligente"]
   };
 
   const MAX_RETRIES = 3;
