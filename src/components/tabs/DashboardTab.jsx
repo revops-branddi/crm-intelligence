@@ -174,18 +174,21 @@ export const DashboardTab = ({ analysis, hardMetrics, onCopyText }) => (
 
       <div className="card p-6">
         <SectionTitle title="Dores & Objeções" subtitle="O que tira o sono do cliente e as barreiras ativas." />
-        <div className="flex flex-wrap gap-2 mt-4">
+        <ul className="mt-4 space-y-2.5">
           {analysis.dores.map((dor, i) => (
-            <span key={i} className="bg-slate-50 border border-slate-200 text-slate-600 text-[10px] font-bold px-3 py-1 rounded-full uppercase hover:border-orange-300 transition-colors cursor-default">{dor}</span>
+            <li key={i} className="flex items-start gap-2.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5">
+              <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-orange-400" aria-hidden="true"></span>
+              <span className="min-w-0 text-xs font-medium leading-snug text-slate-600">{dor}</span>
+            </li>
           ))}
-        </div>
+        </ul>
         <div className="mt-6 pt-4 border-t border-slate-100">
           <p className="text-[10px] font-bold text-red-400 uppercase tracking-wider mb-3">Objeções Levantadas</p>
-          <div className="space-y-2">
+          <div className="space-y-2.5">
             {analysis.objecoes.map((obj, i) => (
-              <div key={i} className="flex items-start gap-2">
-                <div className="w-1.5 h-1.5 rounded-full bg-red-400 mt-1.5 shrink-0"></div>
-                <span className="text-xs text-slate-600 font-medium leading-snug">{obj}</span>
+              <div key={i} className="flex items-start gap-2.5 rounded-lg bg-red-50/40 px-3 py-2.5">
+                <div className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-red-400"></div>
+                <span className="min-w-0 text-xs font-medium leading-snug text-slate-600">{obj}</span>
               </div>
             ))}
           </div>
