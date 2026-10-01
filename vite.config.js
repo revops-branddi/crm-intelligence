@@ -6,6 +6,11 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
+      '/api/pipedrive-v2': {
+        target: 'https://api.pipedrive.com/api/v2',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/pipedrive-v2/, '')
+      },
       '/api/pipedrive': {
         target: 'https://api.pipedrive.com/v1',
         changeOrigin: true,

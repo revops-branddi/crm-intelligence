@@ -1,4 +1,5 @@
 const PIPEDRIVE_BASE = '/api/pipedrive';
+const PIPEDRIVE_V2_BASE = '/api/pipedrive-v2';
 
 const COMPANY_GAPS = [
   ['oQueFaz', 'O que a empresa faz e quais produtos ou serviços oferece?'],
@@ -39,7 +40,10 @@ function customFieldValue(value, field) {
 
 function customFields(organization, definitions = []) {
   return definitions
-    .filter(field => field?.key && field?.name && organization?.[field.key] !== undefined)
+    // A API de definições também inclui campos padrão (id, nome, site etc.).
+    // Campos personalizados do Pipedrive são identificados por sua chave hash.
+    .filter(field => /^[a-f\d]{40}$/i.test(field?.key || ''))
+    .filter(field => field.name && organization?.[field.key] !== undefined)
     .map(field => ({
       label: String(field.name).trim(),
       value: customFieldValue(organization[field.key], field),
@@ -73,18 +77,37 @@ export function normalizeCompanyProfile(organization, fieldDefinitions = []) {
   };
 }
 
+async function fetchOrganization(orgId, token, headers) {
+  // Algumas contas respondem 401 no endpoint v1 de Organização, apesar de
+  // permitirem a leitura de deals. Preferimos v2 e preservamos v1 como
+  // compatibilidade para contas que ainda não expõem o recurso novo.
+  const paths = [
+    `${PIPEDRIVE_V2_BASE}/organizations/${orgId}?api_token=${token}`,
+    `${PIPEDRIVE_BASE}/organizations/${orgId}?api_token=${token}`,
+  ];
+
+  for (const path of paths) {
+    try {
+      const response = await fetch(path, { method: 'GET', headers });
+      if (response.ok) return response.json();
+    } catch {
+      // Tenta a próxima versão; a ausência de perfil nunca deve bloquear o card.
+    }
+  }
+  return null;
+}
+
 export async function fetchCompanyProfile(orgId, token) {
   if (!orgId) return { available: false, name: '', fields: {}, customFields: [] };
 
   try {
     const headers = { Accept: 'application/json' };
-    const [organizationRes, fieldsRes] = await Promise.all([
-      fetch(`${PIPEDRIVE_BASE}/organizations/${orgId}?api_token=${token}`, { method: 'GET', headers }),
+    const [organizationBody, fieldsRes] = await Promise.all([
+      fetchOrganization(orgId, token, headers),
       fetch(`${PIPEDRIVE_BASE}/organizationFields?limit=500&api_token=${token}`, { method: 'GET', headers }),
     ]);
-    if (!organizationRes.ok) return { available: false, name: '', fields: {}, customFields: [] };
+    if (!organizationBody?.data) return { available: false, name: '', fields: {}, customFields: [] };
 
-    const organizationBody = await organizationRes.json();
     const fieldsBody = fieldsRes.ok ? await fieldsRes.json() : { data: [] };
     return normalizeCompanyProfile(organizationBody?.data, fieldsBody?.data || []);
   } catch {

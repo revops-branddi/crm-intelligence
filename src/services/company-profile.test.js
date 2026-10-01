@@ -7,14 +7,15 @@ test('preserva campos padrão e traduz opções de campos customizados', () => {
     {
       name: 'Marca Exemplo',
       website: 'https://exemplo.com.br',
-      custom_vertical: '174',
-      custom_services: '745,749',
-      custom_empty: '',
+      aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa: '174',
+      bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb: '745,749',
+      cccccccccccccccccccccccccccccccccccccccc: '',
     },
     [
-      { key: 'custom_vertical', name: 'Vertical', options: [{ id: 174, label: 'Varejo' }] },
-      { key: 'custom_services', name: 'Serviços de interesse', options: [{ id: 745, label: 'Brand Bidding' }, { id: 749, label: 'Buy Box Protection' }] },
-      { key: 'custom_empty', name: 'Ignorar', options: [] },
+      { key: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', name: 'Vertical', options: [{ id: 174, label: 'Varejo' }] },
+      { key: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', name: 'Serviços de interesse', options: [{ id: 745, label: 'Brand Bidding' }, { id: 749, label: 'Buy Box Protection' }] },
+      { key: 'cccccccccccccccccccccccccccccccccccccccc', name: 'Ignorar', options: [] },
+      { key: 'website', name: 'Site', options: [] },
     ],
   );
 
