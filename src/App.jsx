@@ -17,10 +17,12 @@ import { DashboardTab } from './components/tabs/DashboardTab';
 import { StrategyTab } from './components/tabs/StrategyTab';
 import { TimelineTab } from './components/tabs/TimelineTab';
 import { ParticipantsTab } from './components/tabs/ParticipantsTab';
+import { CompanyTab } from './components/tabs/CompanyTab';
 import { SavedDealsTab } from './components/tabs/SavedDealsTab';
 
 // Services
 import { calculateHardMetrics, parsePipedriveDate } from './services/metrics';
+import { companyProfileToPrompt, fetchCompanyProfile } from './services/company-profile';
 
 const App = () => {
   // ─── Auth ───
@@ -212,6 +214,8 @@ const App = () => {
 
       const dealData = await dealRes.json();
       let participantsData = participantsRes.ok ? await participantsRes.json() : { success: false, data: [] };
+      const orgId = typeof dealData.data?.org_id === 'object' ? dealData.data.org_id?.value : dealData.data?.org_id;
+      const companyProfile = await fetchCompanyProfile(orgId, pipedriveToken);
 
       // Enrich participants
       if (participantsData.data && participantsData.data.length > 0) {
@@ -258,6 +262,7 @@ const App = () => {
       const dataAtual = new Date().toLocaleDateString('pt-BR', { year: 'numeric', month: 'long', day: 'numeric' });
       let compiledHistory = `--- DATA DE REFERÊNCIA (HOJE) ---\n${dataAtual}\n\n`;
       compiledHistory += `--- DADOS DO NEGÓCIO E MÉTRICAS EXATAS ---\nID do Negócio: ${dealId}\nTítulo: ${dealData.data.title}\nDias no Funil (Aberto há): ${metrics.daysOpen} dias\nDias sem Contato (Email/WhatsApp/LinkedIn/Call): ${metrics.daysInactive} dias\nTotal de Interações Registradas: ${metrics.totalActions}\n\n`;
+      compiledHistory += `--- DADOS DA EMPRESA NO CRM ---\n${companyProfileToPrompt(companyProfile)}\n\n`;
 
       compiledHistory += `\n--- PARTICIPANTES VINCULADOS ---\n`;
       if (participantsData.data && participantsData.data.length > 0) {
@@ -531,6 +536,10 @@ const App = () => {
                     analysis={analysis} 
                     onCopyText={copyToClipboard}
                   />
+                )}
+
+                {activeTab === 'empresa' && (
+                  <CompanyTab analysis={analysis} onCopyText={copyToClipboard} />
                 )}
 
                 {activeTab === 'participantes' && (
