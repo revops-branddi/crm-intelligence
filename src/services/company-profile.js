@@ -1,5 +1,14 @@
 const PIPEDRIVE_BASE = '/api/pipedrive';
 
+const COMPANY_GAPS = [
+  ['oQueFaz', 'O que a empresa faz e quais produtos ou serviços oferece?'],
+  ['modeloNegocio', 'Qual é o modelo de negócio da empresa?'],
+  ['produtosServicos', 'Quais são os principais produtos e serviços?'],
+  ['canaisVenda', 'Quais canais de venda a empresa utiliza?'],
+  ['abrangencia', 'Qual é a abrangência geográfica da operação?'],
+  ['grupoEmpresarial', 'A empresa pertence a algum grupo empresarial?'],
+];
+
 function text(value) {
   if (typeof value === 'string') return value.trim();
   if (typeof value === 'number') return String(value);
@@ -98,4 +107,35 @@ export function companyProfileToPrompt(profile) {
     lines.push(`${field.label}: ${field.value}`);
   }
   return lines.join('\n');
+}
+
+/** Mantém o contrato da tela mesmo quando a resposta do modelo vem incompleta.
+ * Não cria fatos: apenas remove evidências sem fonte verificável e transforma
+ * campos ausentes em perguntas objetivas para a próxima abordagem. */
+export function normalizeCompanyAnalysis(company) {
+  if (!company || typeof company !== 'object') return null;
+
+  const normalized = {
+    ...company,
+    resumo: text(company.resumo),
+    oQueFaz: text(company.oQueFaz),
+    modeloNegocio: text(company.modeloNegocio),
+    produtosServicos: list(company.produtosServicos),
+    canaisVenda: list(company.canaisVenda),
+    abrangencia: text(company.abrangencia),
+    grupoEmpresarial: text(company.grupoEmpresarial),
+    outrasMarcas: list(company.outrasMarcas),
+  };
+
+  normalized.evidencias = (Array.isArray(company.evidencias) ? company.evidencias : [])
+    .map(evidence => ({ afirmacao: text(evidence?.afirmacao), fonte: text(evidence?.fonte) }))
+    .filter(evidence => evidence.afirmacao && /^(CRM — organização|Histórico do deal — \d{2}\/\d{2}\/\d{4})$/.test(evidence.fonte));
+
+  const gaps = Array.isArray(company.lacunas) ? company.lacunas.map(text).filter(Boolean) : [];
+  for (const [field, question] of COMPANY_GAPS) {
+    const value = normalized[field];
+    if (!value || (Array.isArray(value) && value.length === 0)) gaps.push(question);
+  }
+  normalized.lacunas = [...new Set(gaps)];
+  return normalized;
 }

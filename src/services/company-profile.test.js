@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { companyProfileToPrompt, normalizeCompanyProfile } from './company-profile.js';
+import { companyProfileToPrompt, normalizeCompanyAnalysis, normalizeCompanyProfile } from './company-profile.js';
 
 test('preserva campos padrão e traduz opções de campos customizados', () => {
   const profile = normalizeCompanyProfile(
@@ -28,4 +28,19 @@ test('preserva campos padrão e traduz opções de campos customizados', () => {
 
 test('declara indisponibilidade de organização sem inventar dados', () => {
   assert.match(companyProfileToPrompt({ available: false }), /Declare esta lacuna/);
+});
+
+test('converte ausência em lacuna e descarta evidência sem fonte verificável', () => {
+  const analysis = normalizeCompanyAnalysis({
+    resumo: 'Marca de exemplo.',
+    oQueFaz: 'Vende cosméticos.',
+    evidencias: [
+      { afirmacao: 'Opera no varejo.', fonte: 'CRM — organização' },
+      { afirmacao: 'Afirmação sem fonte confiável.', fonte: 'Internet' },
+    ],
+  });
+
+  assert.deepEqual(analysis.evidencias, [{ afirmacao: 'Opera no varejo.', fonte: 'CRM — organização' }]);
+  assert.ok(analysis.lacunas.includes('Qual é o modelo de negócio da empresa?'));
+  assert.ok(analysis.lacunas.includes('Quais são os principais produtos e serviços?'));
 });

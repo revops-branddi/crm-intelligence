@@ -22,7 +22,7 @@ import { SavedDealsTab } from './components/tabs/SavedDealsTab';
 
 // Services
 import { calculateHardMetrics, parsePipedriveDate } from './services/metrics';
-import { companyProfileToPrompt, fetchCompanyProfile } from './services/company-profile';
+import { companyProfileToPrompt, fetchCompanyProfile, normalizeCompanyAnalysis } from './services/company-profile';
 
 const App = () => {
   // ─── Auth ───
@@ -56,6 +56,10 @@ const App = () => {
 
   const [flowItems, setFlowItems] = useState([]);
   const [usersMap, setUsersMap] = useState({});
+
+  const normalizeAnalysis = (value) => value?.perfilEmpresa
+    ? { ...value, perfilEmpresa: normalizeCompanyAnalysis(value.perfilEmpresa) }
+    : value;
 
   // ═══════════════════════════════════════════════
   //  AUTH
@@ -141,7 +145,7 @@ const App = () => {
   const handleLoadDeal = (deal) => {
     setDealId(deal.deal_id);
     setDealTitle(deal.deal_title);
-    setAnalysis(deal.analise_ia);
+    setAnalysis(normalizeAnalysis(deal.analise_ia));
     setHardMetrics(deal.metricas);
     setRawExtractedData(deal.dados_brutos || '');
     setFlowItems(deal.flow_items || []);
@@ -168,7 +172,7 @@ const App = () => {
 
         if (cacheData && !cacheError) {
           setRawExtractedData(cacheData.dados_brutos);
-          setAnalysis(cacheData.analise_ia);
+          setAnalysis(normalizeAnalysis(cacheData.analise_ia));
           setHardMetrics(cacheData.metricas);
 
           try {
@@ -357,6 +361,7 @@ const App = () => {
         };
       }
 
+      parsedData.perfilEmpresa = normalizeCompanyAnalysis(parsedData.perfilEmpresa);
       setAnalysis(parsedData);
 
       const nowString = new Date().toISOString();
