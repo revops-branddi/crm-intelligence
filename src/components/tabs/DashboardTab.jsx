@@ -5,6 +5,47 @@ import {
 } from 'lucide-react';
 import { SectionTitle } from '../ui/SectionTitle';
 
+const formatMeetingDate = (value) => {
+  if (!value) return 'data não informada';
+  const [datePart] = value.split(' ');
+  const parts = datePart.split('-');
+  if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
+  return value;
+};
+
+const MeetingMetric = ({ title, icon, count, meetings, accentClass, iconClass, bulletClass }) => {
+  const latestMeeting = meetings?.[0];
+  const hasMeetings = count > 0;
+
+  return (
+    <div className={`card group relative p-4 ${hasMeetings ? '' : 'opacity-50'}`}>
+      <div className="flex items-center gap-2 mb-2">
+        {React.createElement(icon, { size: 14, className: iconClass })}
+        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{title}</p>
+      </div>
+      <p className={`text-xl font-black ${accentClass}`}>{count || 0}</p>
+      <p className="text-[10px] text-slate-400">{hasMeetings ? `Última: ${formatMeetingDate(latestMeeting?.date)}` : 'nenhuma reunião concluída'}</p>
+
+      {hasMeetings && (
+        <div
+          role="tooltip"
+          className="pointer-events-none absolute bottom-[calc(100%+0.5rem)] left-0 z-20 w-72 rounded-xl border border-slate-200 bg-white p-3 shadow-xl opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100"
+        >
+          <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-500">Histórico de reuniões ({count})</p>
+          <ul className="max-h-48 space-y-2 overflow-y-auto pr-1">
+            {meetings.map((meeting, index) => (
+              <li key={`${meeting.date}-${meeting.subject}-${index}`} className="flex items-start gap-2 text-xs leading-snug text-slate-600">
+                <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${bulletClass}`} aria-hidden="true" />
+                <span className="min-w-0"><strong className="font-semibold text-slate-700">{formatMeetingDate(meeting.date)}</strong> · {meeting.subject}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+};
+
 export const DashboardTab = ({ analysis, hardMetrics, onCopyText }) => (
   <div className="space-y-6 fade-in">
 
@@ -122,23 +163,25 @@ export const DashboardTab = ({ analysis, hardMetrics, onCopyText }) => (
         </div>
       )}
 
-      <div className={`card p-4 ${(!hardMetrics?.meetingsOutbound && !hardMetrics?.meetingsSales) ? 'opacity-50' : ''}`}>
-        <div className="flex items-center gap-2 mb-2">
-          <Mail size={14} className="text-slate-400" />
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Prospecção</p>
-        </div>
-        <p className="text-xl font-black text-slate-800">{hardMetrics?.meetingsOutbound || 0}</p>
-        <p className="text-[10px] text-slate-400">reuniões outbound</p>
-      </div>
+      <MeetingMetric
+        title="Prospecção"
+        icon={Mail}
+        count={hardMetrics?.meetingsOutbound}
+        meetings={hardMetrics?.outboundMeetings || []}
+        accentClass="text-slate-800"
+        iconClass="text-slate-400"
+        bulletClass="bg-slate-500"
+      />
 
-      <div className={`card p-4 ${(!hardMetrics?.meetingsOutbound && !hardMetrics?.meetingsSales) ? 'opacity-50' : ''}`}>
-        <div className="flex items-center gap-2 mb-2">
-          <Users size={14} className="text-orange-500" />
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Vendas</p>
-        </div>
-        <p className="text-xl font-black text-orange-600">{hardMetrics?.meetingsSales || 0}</p>
-        <p className="text-[10px] text-slate-400">reuniões closer</p>
-      </div>
+      <MeetingMetric
+        title="Vendas"
+        icon={Users}
+        count={hardMetrics?.meetingsSales}
+        meetings={hardMetrics?.salesMeetings || []}
+        accentClass="text-orange-600"
+        iconClass="text-orange-500"
+        bulletClass="bg-orange-500"
+      />
     </div>
 
     {/* ═══ ROW 5: Prioridade+Blocklist | Dores+Objeções (2 cols iguais) ═══ */}
