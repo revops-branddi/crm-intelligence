@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import { SectionTitle } from '../ui/SectionTitle';
 
-export const DashboardTab = ({ analysis, hardMetrics, dealTitle, dealId, lastUpdate, rawExtractedData, status, onCopyText, onForceRefresh }) => (
+export const DashboardTab = ({ analysis, hardMetrics, onCopyText }) => (
   <div className="space-y-6 fade-in">
 
     {/* ═══ ROW 1: KPIs Principais ═══ */}

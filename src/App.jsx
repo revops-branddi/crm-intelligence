@@ -54,8 +54,8 @@ const App = () => {
   const [loadingDeals, setLoadingDeals] = useState(false);
   const [dealsError, setDealsError] = useState("");
 
-  const [flowItems, setFlowItems] = useState([]);
-  const [usersMap, setUsersMap] = useState({});
+  const [, setFlowItems] = useState([]);
+  const [, setUsersMap] = useState({});
 
   const normalizeAnalysis = (value) => value?.perfilEmpresa
     ? { ...value, perfilEmpresa: normalizeCompanyAnalysis(value.perfilEmpresa) }
@@ -295,7 +295,7 @@ const App = () => {
       allFlowItems.forEach(item => {
         let dateStr = "Data desconhecida";
         const rawDate = item.data?.add_time || item.timestamp || item.add_time;
-        try { if (rawDate) dateStr = new Date(parsePipedriveDate(rawDate)).toLocaleDateString('pt-PT'); } catch {}
+        try { if (rawDate) dateStr = new Date(parsePipedriveDate(rawDate)).toLocaleDateString('pt-PT'); } catch { /* mantém fallback */ }
 
         const userId = item.data?.user_id || item.data?.creator_user_id || item.user_id;
         const sdrTag = userId && usersMap[userId] ? `[SDR: ${usersMap[userId]}] ` : '';

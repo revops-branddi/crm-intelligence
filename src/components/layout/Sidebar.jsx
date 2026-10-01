@@ -4,12 +4,12 @@ import {
   BookOpen, Zap, ChevronRight
 } from 'lucide-react';
 
-const SidebarIcon = ({ icon: Icon, label, id, active, onClick }) => (
+const SidebarIcon = ({ icon, label, id, active, onClick }) => (
   <div
     onClick={() => onClick(id)}
     className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors cursor-pointer ${active ? 'bg-branddi-cyan text-branddi-navy font-bold' : 'text-slate-400 hover:bg-slate-800'}`}
   >
-    <Icon size={20} />
+    {React.createElement(icon, { size: 20 })}
     <span className="text-sm font-medium">{label}</span>
   </div>
 );

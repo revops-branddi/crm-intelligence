@@ -222,7 +222,7 @@ export function compileToText(structuredData, dealId) {
     if (item.dateTimestamp) {
       try {
         dateStr = new Date(item.dateTimestamp).toLocaleDateString('pt-PT');
-      } catch (e) { /* keep fallback */ }
+      } catch { /* keep fallback */ }
     } else if (item.date) {
       dateStr = item.date;
     }
