@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Calendar, AlertTriangle, TrendingUp, MessageSquare, XCircle,
   RefreshCw, UserMinus, UserPlus, Zap, Clock
 } from 'lucide-react';
 import { SectionTitle } from '../ui/SectionTitle';
+import { CommercialHistoryRecords } from './CommercialHistoryTab';
 
 const tipoConfig = {
   reuniao_estagnada:       { icon: Calendar,       color: 'text-orange-500', bg: 'bg-orange-50',  border: 'border-orange-200', label: 'Reunião Estagnada' },
@@ -22,7 +23,7 @@ const impactoStyles = {
   negativo: 'bg-red-500',
 };
 
-export const TimelineTab = ({ analysis }) => {
+const DecisiveMilestones = ({ analysis }) => {
   const marcos = analysis?.cronologiaInteligente || [];
 
   if (marcos.length === 0) {
@@ -83,6 +84,23 @@ export const TimelineTab = ({ analysis }) => {
           })}
         </div>
       </div>
+    </div>
+  );
+};
+
+export const TimelineTab = ({ analysis }) => {
+  const [view, setView] = useState('milestones');
+
+  return (
+    <div className="space-y-6 fade-in max-w-6xl mx-auto">
+      <div className="card p-6">
+        <SectionTitle title="Histórico Comercial" subtitle="Consulte o passado da conta sem misturar fatos do CRM e interpretação da IA." />
+        <div className="mt-5 inline-flex rounded-lg bg-slate-100 p-1">
+          <button onClick={() => setView('milestones')} className={`rounded-md px-3 py-2 text-xs font-bold transition-colors ${view === 'milestones' ? 'bg-white text-branddi-navy shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Marcos decisivos</button>
+          <button onClick={() => setView('records')} className={`rounded-md px-3 py-2 text-xs font-bold transition-colors ${view === 'records' ? 'bg-white text-branddi-navy shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Registros do CRM</button>
+        </div>
+      </div>
+      {view === 'milestones' ? <DecisiveMilestones analysis={analysis} /> : <CommercialHistoryRecords analysis={analysis} />}
     </div>
   );
 };

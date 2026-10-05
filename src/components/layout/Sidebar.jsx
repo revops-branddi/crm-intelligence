@@ -41,7 +41,7 @@ export const Sidebar = ({ activeTab, setActiveTab, analysis, user, onLogout }) =
         <SidebarIcon icon={Building2} label="Empresa / Marca" id="empresa" active={activeTab === 'empresa'} onClick={setActiveTab} />
         <SidebarIcon icon={BookOpen} label="Abordagem (Pitch)" id="estrategia" active={activeTab === 'estrategia'} onClick={setActiveTab} />
         <SidebarIcon icon={Users} label="Stakeholders" id="participantes" active={activeTab === 'participantes'} onClick={setActiveTab} />
-        <SidebarIcon icon={Target} label="Cronologia" id="timeline" active={activeTab === 'timeline'} onClick={setActiveTab} />
+        <SidebarIcon icon={Target} label="Histórico Comercial" id="timeline" active={activeTab === 'timeline'} onClick={setActiveTab} />
       </div>
     </nav>
 
