@@ -23,6 +23,7 @@ import { SavedDealsTab } from './components/tabs/SavedDealsTab';
 // Services
 import { calculateHardMetrics, parsePipedriveDate } from './services/metrics';
 import { companyProfileToPrompt, fetchCompanyProfile, normalizeCompanyAnalysis } from './services/company-profile';
+import { buildCommercialHistory } from './services/commercial-history';
 
 const App = () => {
   // ─── Auth ───
@@ -259,6 +260,7 @@ const App = () => {
       }
 
       const metrics = calculateHardMetrics(dealData, allFlowItems);
+      const commercialHistory = buildCommercialHistory(dealData, participantsData.data, allFlowItems, usersMap, { historyTruncated: moreItems });
       setHardMetrics(metrics);
       setProcessingStep(4);
 
@@ -316,7 +318,7 @@ const App = () => {
 
       setRawExtractedData(compiledHistory);
       setDealTitle(dealData.data.title);
-      return { compiledHistory, metrics, participants: participantsData.data, title: dealData.data.title, items: allFlowItems, usersMap };
+      return { compiledHistory, metrics, commercialHistory, participants: participantsData.data, title: dealData.data.title, items: allFlowItems, usersMap };
 
     } catch (err) {
       setStatus("error");
@@ -325,7 +327,7 @@ const App = () => {
     }
   };
 
-  const analyzeWithGemini = async (historyText, metricsObj, titleOverride) => {
+  const analyzeWithGemini = async (historyText, metricsObj, titleOverride, commercialHistory) => {
     try {
       setStatus("analyzing");
       setProcessingStep(5);
@@ -362,6 +364,7 @@ const App = () => {
       }
 
       parsedData.perfilEmpresa = normalizeCompanyAnalysis(parsedData.perfilEmpresa);
+      parsedData.historicoComercial = commercialHistory;
       setAnalysis(parsedData);
 
       const nowString = new Date().toISOString();
@@ -419,7 +422,7 @@ const App = () => {
       if (fetchRes.participants) setDetailedParticipants(fetchRes.participants);
       if (fetchRes.items) setFlowItems(fetchRes.items);
       if (fetchRes.usersMap) setUsersMap(fetchRes.usersMap);
-      await analyzeWithGemini(fetchRes.compiledHistory, fetchRes.metrics, fetchRes.title);
+      await analyzeWithGemini(fetchRes.compiledHistory, fetchRes.metrics, fetchRes.title, fetchRes.commercialHistory);
     } else { setProcessingStep(0); }
   };
 
@@ -436,7 +439,7 @@ const App = () => {
       if (fetchRes.participants) setDetailedParticipants(fetchRes.participants);
       if (fetchRes.items) setFlowItems(fetchRes.items);
       if (fetchRes.usersMap) setUsersMap(fetchRes.usersMap);
-      await analyzeWithGemini(fetchRes.compiledHistory, fetchRes.metrics, fetchRes.title);
+      await analyzeWithGemini(fetchRes.compiledHistory, fetchRes.metrics, fetchRes.title, fetchRes.commercialHistory);
     }
   };
 
@@ -559,6 +562,7 @@ const App = () => {
                     analysis={analysis}
                   />
                 )}
+
               </div>
             ) : (
               /* EMPTY STATE when no analysis loaded */
