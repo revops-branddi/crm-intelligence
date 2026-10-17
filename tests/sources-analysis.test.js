@@ -146,3 +146,25 @@ test('records model, usage and context and treats source text as untrusted', asy
   oversized.sections[0].claims[0].text = 'x'.repeat(3001);
   assert.throws(() => validateAnswer(oversized, [source]), /estrutura/);
 });
+
+test('all populated deal fields and the actual owner precede irrelevant directory users', () => {
+  const sources = [
+    { id: 'deal:1:0', kind: 'deal', ownerId: 22, text: 'Título: Company', recordId: '1', part: 0 },
+    {
+      id: 'deal:1:1',
+      kind: 'deal',
+      ownerId: 22,
+      text: 'Data da reunião: 2026-10-22\nCampo: não informado',
+      recordId: '1',
+      part: 1,
+    },
+    { id: 'users:11', kind: 'users', text: 'Nome: Wrong owner', recordId: '11' },
+    { id: 'users:22', kind: 'users', text: 'Nome: Actual owner', recordId: '22' },
+    { id: 'note:1', kind: 'notes', text: 'Last interaction with customer' },
+  ];
+  const result = selectContext(sources, 'reunião responsável', 10000);
+  assert.ok(result.sources.some((s) => s.text.includes('2026-10-22')));
+  assert.ok(result.sources.some((s) => s.id === 'users:22'));
+  assert.ok(!result.sources.some((s) => s.id === 'users:11'));
+  assert.ok(!result.sources.find((s) => s.id === 'deal:1:1').text.includes('não informado'));
+});
