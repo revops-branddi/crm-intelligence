@@ -18,7 +18,7 @@ export function initialPlan(deal) {
     list('notes', '/api/v1/notes', { deal_id: id }),
     list('activities', '/api/v2/activities', { deal_id: id }, 'cursor'),
     list('participants', `/api/v1/deals/${id}/participants`),
-    list('mailIndex', `/api/v1/deals/${id}/mailMessages`),
+    list('mailIndex', `/api/v1/deals/${id}/mailMessages`, { include_body: 1 }),
     list('files', `/api/v1/deals/${id}/files`),
     list('products', `/api/v2/deals/${id}/products`, {}, 'cursor'),
     list('changelog', `/api/v1/deals/${id}/changelog`, {}, 'cursor'),
@@ -60,23 +60,17 @@ export function discoverTasks(task, body) {
       if (id) tasks.push(single('person', `/api/v2/persons/${id}`));
     }
   if (task.kind === 'mailIndex')
-    for (const record of records)
-      if (record.id)
+    for (const entry of records) {
+      const record = entry.data || entry;
+      if (record.id && typeof record.body !== 'string')
         tasks.push({
           kind: 'mail',
           path: `/api/v1/mailbox/mailMessages/${record.id}`,
           params: { include_body: 1 },
         });
-  if (task.kind === 'mail')
-    for (const file of body.data?.attachments || [])
-      if (file.id)
-        tasks.push({
-          kind: 'attachment',
-          fileId: file.id,
-          name: file.file_name || file.name || String(file.id),
-          path: `/api/v1/files/${file.id}/download`,
-          params: {},
-        });
+      tasks.push(...attachmentTasks(record.attachments));
+    }
+  if (task.kind === 'mail') tasks.push(...attachmentTasks(body.data?.attachments));
   if (task.kind === 'notes')
     for (const record of records)
       if (record.id) tasks.push(list('comments', `/api/v1/notes/${record.id}/comments`));
@@ -112,9 +106,34 @@ export function discoverTasks(task, body) {
     }
   return tasks;
 }
-export function advancePlan(snapshot, task, discovered) {
-  const known = new Set(snapshot.seen_tasks);
-  const pending = snapshot.pending.slice(1);
+function attachmentTasks(files = []) {
+  return (Array.isArray(files) ? files : [])
+    .filter((file) => file.id)
+    .map((file) => ({
+      kind: 'attachment',
+      fileId: file.id,
+      name: file.file_name || file.name || String(file.id),
+      path: `/api/v1/files/${file.id}/download`,
+      params: {},
+    }));
+}
+export function coveredMailTasks(task, body) {
+  if (task.kind !== 'mailIndex' || !Array.isArray(body?.data)) return [];
+  return body.data
+    .map((entry) => entry.data || entry)
+    .filter((record) => record.id && typeof record.body === 'string')
+    .map((record) =>
+      taskKey({
+        kind: 'mail',
+        path: `/api/v1/mailbox/mailMessages/${record.id}`,
+        params: { include_body: 1 },
+      }),
+    );
+}
+export function advancePlan(snapshot, task, discovered, covered = []) {
+  const known = new Set([...snapshot.seen_tasks, ...covered]);
+  const coveredKeys = new Set(covered);
+  const pending = snapshot.pending.slice(1).filter((next) => !coveredKeys.has(taskKey(next)));
   for (const next of discovered) {
     const key = taskKey(next);
     if (known.has(key) && next.pagination && next.kind === task.kind && next.path === task.path)
@@ -129,7 +148,9 @@ export function advancePlan(snapshot, task, discovered) {
     }
   }
   return {
-    pending,
+    pending: pending.sort(
+      (a, b) => Number(a.kind === 'attachment') - Number(b.kind === 'attachment'),
+    ),
     seen_tasks: [...known],
     completed_tasks: snapshot.completed_tasks + 1,
     last_resource: task.kind,

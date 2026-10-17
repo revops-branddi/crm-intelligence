@@ -74,3 +74,38 @@ test('replayed discoveries do not enqueue duplicate hydration', () => {
   assert.equal(result.pending.length, 0);
   assert.equal(result.completed_tasks, 4);
 });
+
+test('full wrapped mail index replaces redundant mailbox requests without losing attachments', async () => {
+  const { coveredMailTasks } = await import('../server/extraction-plan.js');
+  const index = initialPlan({ id: 7 }).find((t) => t.kind === 'mailIndex');
+  assert.equal(index.params.include_body, 1);
+  const mail = {
+    kind: 'mail',
+    path: '/api/v1/mailbox/mailMessages/9',
+    params: { include_body: 1 },
+  };
+  const body = {
+    data: [
+      {
+        object: 'mailMessage',
+        data: { id: 9, body: 'Full original', attachments: [{ id: 4, name: 'offer.pdf' }] },
+      },
+      { data: { id: 10, snippet: 'Only excerpt' } },
+    ],
+  };
+  const discovered = discoverTasks(index, body);
+  assert.equal(discovered.filter((t) => t.kind === 'mail').length, 1);
+  assert.equal(discovered.find((t) => t.kind === 'mail').path, '/api/v1/mailbox/mailMessages/10');
+  const next = advancePlan(
+    { pending: [index, mail], seen_tasks: [taskKey(index), taskKey(mail)], completed_tasks: 0 },
+    index,
+    discovered,
+    coveredMailTasks(index, body),
+  );
+  assert.equal(
+    next.pending.some((t) => t.path === mail.path),
+    false,
+  );
+  assert.ok(next.pending.some((t) => t.fileId === 4));
+  assert.ok(next.seen_tasks.includes(taskKey(mail)));
+});

@@ -268,3 +268,109 @@ test('large originals are transported in bounded chunks without losing Unicode o
   assert.deepEqual(JSON.parse(chunks.join('')), page);
   assert.ok(chunks.length > 1);
 });
+
+test('bounded concurrent batch saves every original and recovers after a transient worker failure', async () => {
+  const { extractionBatch } = await import('../server/extraction.js');
+  const tasks = [1, 2, 3, 4].map((n) => ({
+    kind: 'person',
+    path: `/api/v2/persons/${n}`,
+    params: {},
+  }));
+  const snapshot = { ...state(tasks[0]), pending: tasks, seen_tasks: tasks.map(taskKey) };
+  const db = memoryDb({ crm_snapshots: [snapshot] });
+  let active = 0,
+    maximum = 0,
+    fail = true;
+  const calls = [];
+  const client = {
+    get: async (path) => {
+      calls.push(path);
+      maximum = Math.max(maximum, ++active);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      active--;
+      if (path.endsWith('/2') && fail) throw new HttpError(429, 'Limit', 'pipedrive_error', 5);
+      return { success: true, data: { id: path.split('/').pop() } };
+    },
+  };
+  await assert.rejects(
+    () => extractionBatch({ db, user, snapshot, client, currentDeal: deal }, { concurrency: 3 }),
+    (e) => e.status === 429,
+  );
+  assert.equal(maximum, 3);
+  assert.equal(active, 0);
+  assert.equal(db.tables.crm_snapshots[0].completed_tasks, 1);
+  assert.equal(db.tables.crm_snapshots[0].lease_id, null);
+  fail = false;
+  const result = await extractionBatch({
+    db,
+    user,
+    snapshot: db.tables.crm_snapshots[0],
+    client,
+    currentDeal: deal,
+  });
+  assert.equal(result.completed_tasks, 4);
+  assert.equal(result.remainingTasks, 0);
+  assert.equal(db.tables.crm_raw_pages.length, 4);
+  assert.equal(calls.filter((p) => p.endsWith('/3')).length, 1);
+});
+
+test('text ready does not wait for attachments and analysis declares pending files', async () => {
+  const tasks = [
+    { kind: 'person', path: '/api/v2/persons/1', params: {} },
+    { kind: 'attachment', path: '/api/v1/files/2/download', params: {}, fileId: 2 },
+  ];
+  const snapshot = { ...state(tasks[0]), pending: tasks, seen_tasks: tasks.map(taskKey) };
+  const db = connectedDb(snapshot);
+  const { extractionBatch } = await import('../server/extraction.js');
+  let downloads = 0;
+  const client = {
+    get: async () => ({ success: true, data: deal }),
+    download: async () => {
+      downloads++;
+      throw new Error('must not block core');
+    },
+  };
+  const result = await extractionBatch({ db, user, snapshot, client, currentDeal: deal });
+  assert.equal(result.analysisReady, true);
+  assert.equal(result.status, 'collecting');
+  assert.equal(result.pendingAttachments, 1);
+  assert.equal(downloads, 0);
+  await handleAction(
+    { action: 'answer', snapshotId: id, mode: 'overview', question: '' },
+    {
+      db,
+      user,
+      env,
+      clientFactory: () => client,
+      generate: async ({ snapshot }) => {
+        assert.ok(snapshot.gaps.some((gap) => gap.code === 'pending_attachments'));
+        assert.ok(snapshot.completed_at);
+        return { answer: {}, context_manifest: {}, model: 'test', prompt_version: 'test' };
+      },
+    },
+  );
+});
+test('cached lookup remains owner and company scoped and text export retains all source content', async () => {
+  const snapshot = { ...state({}), status: 'complete', pending: [] };
+  const db = connectedDb(snapshot);
+  db.tables.crm_snapshots.unshift({ ...snapshot, user_id: 'another-user', id: 'private' });
+  const ctx = { db, user, env, clientFactory: () => ({ get: async () => ({ data: deal }) }) };
+  const latest = await handleAction({ action: 'latest', dealId: '7' }, ctx);
+  assert.equal(latest.snapshot.id, id);
+  db.tables.crm_raw_pages = [
+    {
+      snapshot_id: id,
+      task_key: 'a'.repeat(64),
+      kind: 'notes',
+      payload: { data: [{ id: 1, content: 'conteúdo original 🦊 '.repeat(20000) }] },
+    },
+  ];
+  let offset = 0,
+    text = '';
+  do {
+    const result = await handleAction({ action: 'text', snapshotId: id, offset }, ctx);
+    text += result.text;
+    offset = result.nextOffset;
+  } while (offset !== null);
+  assert.equal((text.match(/conteúdo original/g) || []).length, 20000);
+});

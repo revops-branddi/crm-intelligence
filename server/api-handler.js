@@ -2,9 +2,10 @@ import { z } from 'zod';
 import { database, authenticate, encryptToken, decryptToken, limit } from './security.js';
 import { pipedriveClient, positiveId } from './pipedrive.js';
 import { checked, HttpError } from './errors.js';
-import { startExtraction, extractionStep } from './extraction.js';
+import { startExtraction, extractionBatch } from './extraction.js';
 import { allPages, ownedSnapshot, publicSnapshot } from './store.js';
 import { buildSources } from './sources.js';
+import { dealDetails } from './deal-details.js';
 import { generateAnswer } from './analysis.js';
 
 const uuid = z.string().uuid();
@@ -13,6 +14,7 @@ const inputSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('disconnect') }),
   z.object({ action: z.literal('connect'), token: z.string().trim().min(20).max(512) }),
   z.object({ action: z.literal('list'), offset: z.number().int().min(0).max(100000).default(0) }),
+  z.object({ action: z.literal('latest'), dealId: z.string().regex(/^[1-9]\d{0,14}$/) }),
   z.object({ action: z.literal('start'), dealId: z.string().regex(/^[1-9]\d{0,14}$/) }),
   ...['step', 'get', 'answers'].map((action) =>
     z.object({ action: z.literal(action), snapshotId: uuid }),
@@ -21,6 +23,16 @@ const inputSchema = z.discriminatedUnion('action', [
     action: z.literal('sources'),
     snapshotId: uuid,
     query: z.string().max(500).default(''),
+    offset: z.number().int().min(0).default(0),
+  }),
+  z.object({
+    action: z.literal('details'),
+    snapshotId: uuid,
+    offset: z.number().int().min(0).default(0),
+  }),
+  z.object({
+    action: z.literal('text'),
+    snapshotId: uuid,
     offset: z.number().int().min(0).default(0),
   }),
   z.object({ action: z.literal('source'), snapshotId: uuid, sourceId: z.string().min(1).max(200) }),
@@ -38,7 +50,7 @@ const inputSchema = z.discriminatedUnion('action', [
   z.object({
     action: z.literal('answer'),
     snapshotId: uuid,
-    mode: z.enum(['briefing', 'prospecting', 'question']),
+    mode: z.enum(['overview', 'briefing', 'prospecting', 'question']),
     question: z.string().trim().max(2000).default(''),
   }),
 ]);
@@ -117,6 +129,34 @@ export async function handleAction(
       hasMore: rows.length === 20,
     };
   }
+  if (input.action === 'latest') {
+    const id = positiveId(input.dealId);
+    const visible = await client.get(`/api/v2/deals/${id}`);
+    if (!visible.data?.id)
+      throw new HttpError(403, 'O negócio não está acessível no Pipedrive.', 'forbidden');
+    const rows = checked(
+      await db
+        .from('crm_snapshots')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('company_id', connection.company_id)
+        .eq('deal_id', id)
+        .order('started_at', { ascending: false })
+        .limit(20),
+    );
+    const snapshot = rows.find((row) => publicSnapshot(row).analysisReady);
+    if (!snapshot) return { snapshot: null, answers: [] };
+    const answers = checked(
+      await db
+        .from('crm_answers')
+        .select('*')
+        .eq('snapshot_id', snapshot.id)
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(50),
+    );
+    return { snapshot: publicSnapshot(snapshot), answers };
+  }
   if (input.action === 'start') {
     await limit(db, user.id, 'extraction-daily', 100, 86400);
     const id = positiveId(input.dealId);
@@ -133,7 +173,7 @@ export async function handleAction(
     throw new HttpError(403, 'O negócio não está acessível no Pipedrive.', 'forbidden');
   if (input.action === 'step')
     return {
-      snapshot: await extractionStep({ db, user, snapshot, client, currentDeal: current.data }),
+      snapshot: await extractionBatch({ db, user, snapshot, client, currentDeal: current.data }),
     };
   if (input.action === 'get')
     return { snapshot: publicSnapshot(snapshot), currentCrmUpdatedAt: current.data.update_time };
@@ -182,6 +222,23 @@ export async function handleAction(
   }
   const pages = await allPages(db, snapshot.id);
   const sources = buildSources(pages);
+  if (input.action === 'details') return dealDetails(pages, sources, input.offset || 0);
+  if (input.action === 'text') {
+    const text = sources
+      .map((source) =>
+        source.part === 0
+          ? `\n\n--- ${source.title} | Fonte: ${source.id} ---\n${source.text}`
+          : source.text,
+      )
+      .join('');
+    const offset = input.offset || 0,
+      end = Math.min(offset + 150000, text.length);
+    return {
+      text: text.slice(offset, end),
+      totalCharacters: text.length,
+      nextOffset: end < text.length ? end : null,
+    };
+  }
   if (input.action === 'source') {
     const source = sources.find((item) => item.id === input.sourceId);
     if (!source) throw new HttpError(404, 'Fonte não encontrada.', 'not_found');
@@ -196,7 +253,7 @@ export async function handleAction(
     return { sources: filtered.slice(input.offset, input.offset + 30), total: filtered.length };
   }
   if (input.action === 'answer') {
-    if (!['complete', 'partial'].includes(snapshot.status))
+    if (!publicSnapshot(snapshot).analysisReady)
       throw new HttpError(409, 'Conclua a coleta antes de analisar.', 'incomplete_extraction');
     if (input.mode === 'question' && !input.question)
       throw new HttpError(400, 'Escreva uma pergunta.', 'invalid_question');
@@ -211,7 +268,22 @@ export async function handleAction(
     );
     const generated = await generate({
       sources,
-      snapshot,
+      snapshot: {
+        ...snapshot,
+        completed_at: snapshot.completed_at || snapshot.metrics?.referenceAt,
+        gaps: [
+          ...snapshot.gaps,
+          ...(snapshot.pending.length
+            ? [
+                {
+                  resource: 'attachment',
+                  code: 'pending_attachments',
+                  message: `${snapshot.pending.length} anexos ainda em preservação. Esta análise usa o texto já coletado; os arquivos pendentes não foram consultados.`,
+                },
+              ]
+            : []),
+        ],
+      },
       mode: input.mode,
       question: input.question,
       env,

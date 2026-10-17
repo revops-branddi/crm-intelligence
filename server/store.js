@@ -34,5 +34,14 @@ export function publicSnapshot(row) {
   void lease_id;
   void lease_until;
   void user_id;
-  return { ...publicRow, remainingTasks: pending?.length || 0 };
+  return {
+    ...publicRow,
+    remainingTasks: pending?.length || 0,
+    pendingAttachments: pending?.filter((task) => task.kind === 'attachment').length || 0,
+    analysisReady:
+      ['complete', 'partial'].includes(row.status) ||
+      (row.completed_tasks > 0 &&
+        Boolean(pending?.length) &&
+        pending.every((task) => task.kind === 'attachment')),
+  };
 }

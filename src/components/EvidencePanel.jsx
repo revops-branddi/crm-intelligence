@@ -6,7 +6,10 @@ export function EvidencePanel({ snapshot, initialSources, onError }) {
     [total, setTotal] = useState(initialSources.total),
     [offset, setOffset] = useState(0),
     [busy, setBusy] = useState(false),
-    [raw, setRaw] = useState(null);
+    [raw, setRaw] = useState(null),
+    [text, setText] = useState(null),
+    [nextTextOffset, setNextTextOffset] = useState(null),
+    [totalCharacters, setTotalCharacters] = useState(0);
   async function search(nextOffset = 0) {
     setBusy(true);
     try {
@@ -61,6 +64,44 @@ export function EvidencePanel({ snapshot, initialSources, onError }) {
       onError(error.message);
     }
   }
+  async function readText(append = false) {
+    setBusy(true);
+    try {
+      const result = await apiRequest('text', {
+        snapshotId: snapshot.id,
+        offset: append ? nextTextOffset : 0,
+      });
+      setText((previous) => (append ? previous + result.text : result.text));
+      setNextTextOffset(result.nextOffset);
+      setTotalCharacters(result.totalCharacters);
+    } catch (error) {
+      onError(error.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function downloadText() {
+    setBusy(true);
+    try {
+      let offset = 0;
+      const chunks = [];
+      do {
+        const result = await apiRequest('text', { snapshotId: snapshot.id, offset });
+        chunks.push(result.text);
+        offset = result.nextOffset;
+      } while (offset !== null);
+      const url = URL.createObjectURL(new Blob(chunks, { type: 'text/plain;charset=utf-8' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `negocio-${snapshot.deal_id}-texto-bruto.txt`;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (error) {
+      onError(error.message);
+    } finally {
+      setBusy(false);
+    }
+  }
   function exportRaw() {
     const url = URL.createObjectURL(
       new Blob([JSON.stringify(raw, null, 2)], { type: 'application/json' }),
@@ -73,6 +114,43 @@ export function EvidencePanel({ snapshot, initialSources, onError }) {
   }
   return (
     <div className="space-y-4">
+      <section className="card p-5">
+        <div className="section-heading">
+          <div>
+            <span className="eyebrow">INFORMAÇÃO ANTES DA INTERPRETAÇÃO</span>
+            <h2>Texto bruto do negócio</h2>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button className="secondary" disabled={busy} onClick={() => readText()}>
+              Ler texto consolidado
+            </button>
+            <button className="secondary" disabled={busy} onClick={downloadText}>
+              Baixar texto completo
+            </button>
+          </div>
+        </div>
+        <p className="text-xs text-slate-500">
+          Consulte os dados coletados em texto, com as referências de cada registro. Arquivos
+          pendentes ainda não fazem parte deste conteúdo.
+        </p>
+        {text !== null && (
+          <div className="mt-4">
+            <p className="text-xs text-slate-500">
+              {text.length.toLocaleString('pt-BR')} de {totalCharacters.toLocaleString('pt-BR')}{' '}
+              caracteres
+            </p>
+            <pre className="raw-text">{text}</pre>
+            {nextTextOffset !== null && (
+              <button className="secondary" disabled={busy} onClick={() => readText(true)}>
+                Carregar mais texto
+              </button>
+            )}
+            <button className="secondary" onClick={() => setText(null)}>
+              Fechar texto
+            </button>
+          </div>
+        )}
+      </section>
       <form
         onSubmit={(event) => {
           event.preventDefault();

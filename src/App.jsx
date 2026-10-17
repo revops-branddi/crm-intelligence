@@ -8,13 +8,28 @@ import {
   RefreshCw,
   Loader2,
   LogOut,
+  LayoutDashboard,
+  FolderOpen,
+  PlugZap,
+  ArrowUpRight,
+  ChevronRight,
+  ShieldCheck,
 } from 'lucide-react';
 import { supabase } from './lib/supabase';
 import { useAuth } from './hooks/useAuth';
 import { apiRequest } from './services/api';
 import { LoginScreen } from './components/ui/LoginScreen';
 import { AnswerPanel } from './components/AnswerPanel';
+import { DealDetails } from './components/DealDetails';
 import { EvidencePanel } from './components/EvidencePanel';
+import {
+  Brand,
+  WorkflowIntro,
+  ConnectionPanel,
+  CollectionGaps,
+  SourceDialog,
+  ReadyNote,
+} from './components/WorkspaceUI';
 const date = (value) =>
   value
     ? new Date(value).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
@@ -30,6 +45,8 @@ const tabs = [
   ['prospecting', 'Prospecção', Search],
   ['briefing', 'Pré-reunião', FileText],
   ['question', 'Perguntas', MessageSquare],
+  ['details', 'Empresa e pessoas', FolderOpen],
+  ['timeline', 'Histórico', RefreshCw],
   ['sources', 'Dados e fontes', Database],
 ];
 function delay(ms, signal) {
@@ -64,6 +81,8 @@ function Workspace({ user, logout }) {
     [notice, setNotice] = useState(''),
     [sourceData, setSourceData] = useState(null),
     [openedSource, setOpenedSource] = useState(null);
+  const [page, setPage] = useState('home'),
+    [savedQuery, setSavedQuery] = useState('');
   const controller = useRef(null),
     mounted = useRef(true);
   useEffect(() => {
@@ -115,6 +134,7 @@ function Workspace({ user, logout }) {
     }
   }
   async function list(offset = 0) {
+    setPage('saved');
     setBusy('list');
     setError('');
     try {
@@ -134,6 +154,7 @@ function Workspace({ user, logout }) {
     try {
       const result = await apiRequest('get', { snapshotId: id });
       const history = await apiRequest('answers', { snapshotId: id });
+      setPage('home');
       setSnapshot(result.snapshot);
       setAnswers(history.answers);
       setSelectedAnswer(null);
@@ -148,27 +169,68 @@ function Workspace({ user, logout }) {
       setBusy('');
     }
   }
-  async function collect(existing) {
+  async function openDeal(event) {
+    event.preventDefault();
+    setBusy('load');
     setError('');
-    setNotice('');
-    setBusy('extracting');
-    controller.current = new AbortController();
-    const signal = controller.current.signal;
     try {
-      let current =
-        existing || (await apiRequest('start', { dealId: dealId.trim() }, signal)).snapshot;
-      setSnapshot(current);
-      setAnswers([]);
+      const result = await apiRequest('latest', { dealId: dealId.trim() });
+      if (!result.snapshot) {
+        await collect();
+        return;
+      }
+      setSnapshot(result.snapshot);
+      setAnswers(result.answers);
       setSelectedAnswer(null);
       setSourceData(null);
       setOpenedSource(null);
       setTab('overview');
-      let retries = 0;
+      setPage('home');
+      setNotice(
+        `Versão salva de ${date(result.snapshot.started_at)} carregada. Use “Nova extração” para atualizar os dados.`,
+      );
+      if (!result.answers.length && configuration.analysisConfigured)
+        await analyze('overview', result.snapshot);
+    } catch (error) {
+      setError(error.message);
+    } finally {
+      if (mounted.current) setBusy('');
+    }
+  }
+  async function collect(existing, freshDealId = dealId) {
+    setPage('home');
+    setError('');
+    setNotice('');
+    setBusy('extracting');
+    const extractionController = new AbortController();
+    controller.current = extractionController;
+    const signal = extractionController.signal;
+    try {
+      let current =
+        existing || (await apiRequest('start', { dealId: freshDealId.trim() }, signal)).snapshot;
+      setSnapshot(current);
+      if (!existing) {
+        setAnswers([]);
+        setSelectedAnswer(null);
+      }
+      setSourceData(null);
+      setOpenedSource(null);
+      setTab('overview');
+      let retries = 0,
+        analyzed = Boolean(existing && answers.some((answer) => answer.mode === 'overview')),
+        analysisSucceeded = analyzed;
       while (current.status === 'collecting') {
         try {
           current = (await apiRequest('step', { snapshotId: current.id }, signal)).snapshot;
           if (!mounted.current) return;
           setSnapshot(current);
+          if (current.analysisReady && !analyzed && configuration.analysisConfigured) {
+            analyzed = true;
+            analysisSucceeded = await analyze('overview', current);
+            controller.current = extractionController;
+            if (signal.aborted) throw new DOMException('Paused', 'AbortError');
+            setBusy('extracting');
+          }
           retries = 0;
         } catch (error) {
           if (error.name === 'AbortError') throw error;
@@ -179,7 +241,10 @@ function Workspace({ user, logout }) {
           throw error;
         }
       }
-      setNotice('Dados preservados. Escolha Prospecção, Pré-reunião ou faça uma pergunta.');
+      if (!analyzed && configuration.analysisConfigured && mounted.current)
+        await analyze('overview', current);
+      else if (analysisSucceeded)
+        setNotice('Coleta finalizada. A análise está disponível e os originais foram preservados.');
     } catch (error) {
       if (mounted.current) {
         if (error.name === 'AbortError')
@@ -190,20 +255,22 @@ function Workspace({ user, logout }) {
       if (mounted.current) setBusy('');
     }
   }
-  async function analyze(mode) {
+  async function analyze(mode, target = snapshot) {
     setBusy('analysis');
     setError('');
     controller.current = new AbortController();
     try {
       const result = await apiRequest(
         'answer',
-        { snapshotId: snapshot.id, mode, question: mode === 'question' ? question : '' },
+        { snapshotId: target.id, mode, question: mode === 'question' ? question : '' },
         controller.current.signal,
       );
       if (mounted.current) {
         setAnswers((previous) => [result.answer, ...previous]);
         setSelectedAnswer(result.answer);
         setTab(mode);
+        setNotice('Análise pronta. Consulte as conclusões e abra as fontes para conferir.');
+        return true;
       }
     } catch (error) {
       if (mounted.current)
@@ -217,6 +284,7 @@ function Workspace({ user, logout }) {
     }
   }
   async function viewSources() {
+    const resumeBusy = busy === 'extracting' ? 'extracting' : '';
     setBusy('sources');
     setError('');
     try {
@@ -225,7 +293,7 @@ function Workspace({ user, logout }) {
     } catch (error) {
       setError(error.message);
     } finally {
-      setBusy('');
+      setBusy(resumeBusy);
     }
   }
   async function openSource(id) {
@@ -245,433 +313,548 @@ function Workspace({ user, logout }) {
       setError('Não foi possível copiar. Selecione o texto manualmente.');
     }
   }
-  const ready = snapshot && ['complete', 'partial'].includes(snapshot.status);
+  const ready =
+    snapshot && (snapshot.analysisReady || ['complete', 'partial'].includes(snapshot.status));
   const currentAnswer =
     selectedAnswer?.mode === tab ? selectedAnswer : answers.find((answer) => answer.mode === tab);
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800">
-      <header className="bg-branddi-navy text-white px-5 py-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex gap-3 items-center">
-          <Zap className="text-branddi-cyan" />
-          <div>
-            <h1 className="font-bold">CRM Intelligence</h1>
-            <p className="text-xs text-slate-300">Branddi · Prospecção e preparação de reuniões</p>
-          </div>
+    <div className="app-shell">
+      <aside className="app-sidebar">
+        <Brand />
+        <div className="workspace-label">WORKSPACE COMERCIAL</div>
+        <nav className="main-nav" aria-label="Navegação principal">
+          {[
+            ['home', 'Visão do negócio', LayoutDashboard],
+            ['saved', 'Extrações salvas', FolderOpen],
+            ['connection', 'Integração', PlugZap],
+          ].map(([id, label, Icon]) => (
+            <button
+              key={id}
+              className={page === id ? 'active' : ''}
+              aria-current={page === id ? 'page' : undefined}
+              disabled={!!busy}
+              onClick={() => (id === 'saved' && configuration?.connection ? list() : setPage(id))}
+            >
+              <Icon size={19} />
+              {label}
+              {page === id && <ChevronRight size={15} />}
+            </button>
+          ))}
+        </nav>
+        <div className="sidebar-note">
+          <ShieldCheck size={22} />
+          <strong>Inteligência com evidência.</strong>
+          <p>Da informação original à sua próxima conversa.</p>
         </div>
-        <div className="flex gap-4 items-center text-xs">
-          <span>{user.email}</span>
+        <div className="sidebar-account">
+          <span className="avatar">{user.email.slice(0, 2).toUpperCase()}</span>
+          <div>
+            <strong>Conta corporativa</strong>
+            <span>{user.email}</span>
+          </div>
           <button
+            title="Sair"
+            aria-label="Sair"
             onClick={() => {
               controller.current?.abort();
               void logout();
             }}
-            className="flex gap-1 items-center"
           >
-            <LogOut size={14} />
-            Sair
+            <LogOut size={17} />
           </button>
         </div>
-      </header>
-      <main className="max-w-6xl mx-auto p-4 md:p-8 space-y-5">
-        {error && (
-          <div
-            role="alert"
-            className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800 flex justify-between gap-3"
-          >
-            {error}
-            <button onClick={() => setError('')} aria-label="Fechar erro">
-              ×
-            </button>
+      </aside>
+      <div className="app-content">
+        <header className="workspace-header">
+          <div>
+            Workspace <ChevronRight size={14} />
+            <strong>
+              {page === 'saved'
+                ? 'Extrações salvas'
+                : page === 'connection'
+                  ? 'Integração'
+                  : 'Inteligência comercial'}
+            </strong>
           </div>
-        )}
-        {notice && (
-          <div
-            role="status"
-            className="rounded-xl border border-cyan-200 bg-cyan-50 p-4 text-sm text-branddi-navy flex justify-between gap-3"
-          >
-            {notice}
-            <button onClick={() => setNotice('')} aria-label="Fechar aviso">
-              ×
-            </button>
-          </div>
-        )}
-        {!configuration && !error && <p>Verificando conexão…</p>}
-        {configuration && !configuration.connection && (
-          <section className="card p-6 max-w-xl">
-            <h2 className="text-lg font-bold">Conectar ao Pipedrive</h2>
-            <p className="text-sm text-slate-500 mt-2">
-              Use o token da sua conta. As consultas respeitam a visibilidade dos negócios nessa
-              conta. O token será criptografado no servidor.
-            </p>
-            <form onSubmit={configure} className="mt-4 space-y-3">
-              <label htmlFor="pipedrive-token" className="block text-sm font-semibold">
-                Token Pipedrive
-              </label>
-              <input
-                id="pipedrive-token"
-                type="password"
-                autoComplete="off"
-                className="input w-full"
-                value={token}
-                onChange={(event) => setToken(event.target.value)}
-                required
-                minLength={20}
-              />
-              <button disabled={!!busy} className="primary">
-                Conectar
-              </button>
-            </form>
-          </section>
-        )}
-        {configuration?.connection && (
-          <>
-            <section className="card p-5">
-              <div className="flex justify-between gap-3 items-center mb-4">
-                <p className="text-xs text-emerald-700 font-semibold">
-                  Pipedrive conectado · conta {configuration.connection.company_id}
-                </p>
-                <button
-                  disabled={!!busy}
-                  onClick={disconnect}
-                  className="text-xs text-slate-500 underline"
-                >
-                  Desconectar
-                </button>
-              </div>
-              <form
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  void collect();
-                }}
-                className="flex flex-wrap gap-3 items-end"
-              >
-                <div className="flex-1 min-w-48">
-                  <label htmlFor="deal-id" className="block text-sm font-semibold mb-1">
-                    ID do negócio
-                  </label>
-                  <input
-                    id="deal-id"
-                    className="input w-full"
-                    inputMode="numeric"
-                    pattern="[1-9][0-9]*"
-                    value={dealId}
-                    onChange={(event) => setDealId(event.target.value)}
-                    placeholder="Ex.: 10298"
-                    required
-                    disabled={!!busy}
-                  />
-                </div>
-                <button className="primary" disabled={!!busy}>
-                  <RefreshCw size={15} />
-                  Nova extração
-                </button>
-                <button
-                  type="button"
-                  className="secondary"
-                  disabled={!!busy}
-                  onClick={() => list()}
-                >
-                  Extrações salvas
-                </button>
-              </form>
-              <p className="text-xs text-slate-500 mt-3">
-                Cada extração cria uma nova versão. O histórico original permanece preservado.
+          <span className={`connection-status ${configuration?.connection ? 'connected' : ''}`}>
+            <i />
+            {configuration?.connection ? 'Pipedrive conectado' : 'Conectar Pipedrive'}
+          </span>
+        </header>
+        <main className="workspace-main">
+          <div className="page-heading">
+            <div>
+              <span className="eyebrow">INTELIGÊNCIA COMERCIAL</span>
+              <h1>
+                {page === 'saved'
+                  ? 'Seu histórico, organizado.'
+                  : page === 'connection'
+                    ? 'Suas conexões.'
+                    : snapshot
+                      ? 'Um negócio. Todo o contexto.'
+                      : 'Boas conversas começam aqui.'}
+              </h1>
+              <p>
+                {page === 'saved'
+                  ? 'Retome uma análise e consulte os dados preservados de cada versão.'
+                  : 'Transforme os dados do CRM em clareza para a próxima abordagem.'}
               </p>
-            </section>
-            {(saved.length > 0 || hasMore || listOffset > 0) && (
-              <section className="card p-4">
-                <h2 className="font-bold mb-3">Versões salvas</h2>
-                <div className="space-y-2">
-                  {saved.map((row) => (
-                    <button
-                      disabled={!!busy}
-                      onClick={() => load(row.id)}
-                      key={row.id}
-                      className="w-full text-left p-3 rounded-lg bg-slate-50 hover:bg-cyan-50 flex flex-wrap justify-between gap-2"
-                    >
-                      <span className="text-sm font-semibold">
-                        #{row.deal_id} · {row.title}
-                      </span>
-                      <span className="text-xs text-slate-500">
-                        {date(row.started_at)} · {statusLabel[row.status]}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-                <div className="flex justify-between mt-3">
-                  <button
-                    className="secondary"
-                    disabled={!!busy || !listOffset}
-                    onClick={() => list(Math.max(0, listOffset - 20))}
-                  >
-                    Anterior
+            </div>
+            <span className="workspace-tag">BRANDDI / REVOPS</span>
+          </div>
+          {error && (
+            <div
+              role="alert"
+              className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800 flex justify-between gap-3"
+            >
+              {error}
+              <button onClick={() => setError('')} aria-label="Fechar erro">
+                ×
+              </button>
+            </div>
+          )}
+          {notice && (
+            <div
+              role="status"
+              className="rounded-xl border border-cyan-200 bg-cyan-50 p-4 text-sm text-branddi-navy flex justify-between gap-3"
+            >
+              {notice}
+              <button onClick={() => setNotice('')} aria-label="Fechar aviso">
+                ×
+              </button>
+            </div>
+          )}
+          {!configuration && !error && <p>Verificando conexão…</p>}
+          {configuration && !configuration.connection && (
+            <>
+              <ConnectionPanel
+                token={token}
+                setToken={setToken}
+                busy={busy}
+                configure={configure}
+              />
+              <WorkflowIntro />
+            </>
+          )}
+          {configuration?.connection && (
+            <>
+              {page === 'connection' && (
+                <section className="card integration-connected">
+                  <PlugZap size={30} />
+                  <div>
+                    <span className="eyebrow">CONEXÃO ATIVA</span>
+                    <h2>Pipedrive conectado</h2>
+                    <p>
+                      Conta {configuration.connection.company_id}. Suas extrações estão vinculadas a
+                      esta conexão.
+                    </p>
+                  </div>
+                  <button className="secondary" disabled={!!busy} onClick={disconnect}>
+                    Desconectar
                   </button>
-                  <button
-                    className="secondary"
-                    disabled={!!busy || !hasMore}
-                    onClick={() => list(listOffset + 20)}
-                  >
-                    Próxima
-                  </button>
-                </div>
-              </section>
-            )}
-            {snapshot && (
-              <>
-                <section className="card p-5">
-                  <div className="flex flex-wrap gap-3 justify-between">
-                    <div>
-                      <h2 className="text-xl font-bold text-branddi-navy">{snapshot.title}</h2>
-                      <p className="text-xs text-slate-500 mt-1">
-                        Deal #{snapshot.deal_id} · {statusLabel[snapshot.status]}
-                      </p>
-                      <p className="text-xs text-slate-500 mt-1">
-                        Coleta iniciada: {date(snapshot.started_at)} · Finalizada:{' '}
-                        {date(snapshot.completed_at)}
-                      </p>
+                </section>
+              )}
+              {page === 'home' && (
+                <section className="card launch-card">
+                  <div className="flex justify-between gap-3 items-center mb-4">
+                    <p className="text-xs text-emerald-700 font-semibold">
+                      Pipedrive conectado · conta {configuration.connection.company_id}
+                    </p>
+                    <span className="eyebrow">NOVA ANÁLISE</span>
+                  </div>
+                  <form onSubmit={openDeal} className="flex flex-wrap gap-3 items-end">
+                    <div className="flex-1 min-w-48">
+                      <label htmlFor="deal-id" className="block text-sm font-semibold mb-1">
+                        ID do negócio
+                      </label>
+                      <input
+                        id="deal-id"
+                        className="input w-full"
+                        inputMode="numeric"
+                        pattern="[1-9][0-9]*"
+                        value={dealId}
+                        onChange={(event) => setDealId(event.target.value)}
+                        placeholder="Ex.: 10298"
+                        required
+                        disabled={!!busy}
+                      />
                     </div>
-                    {snapshot.status === 'collecting' && (
+                    <button className="primary" disabled={!!busy}>
+                      <RefreshCw size={15} />
+                      Analisar negócio
+                    </button>
+                    <button
+                      type="button"
+                      className="secondary"
+                      disabled={!!busy}
+                      onClick={() => list()}
+                    >
+                      Consultar histórico
+                    </button>
+                  </form>
+                  <p className="text-xs text-slate-500 mt-3">
+                    Abra a análise salva ou informe um novo negócio para extrair o texto e analisar
+                    automaticamente.
+                  </p>
+                </section>
+              )}
+              {page === 'home' && !snapshot && <WorkflowIntro />}
+              {page === 'saved' && (
+                <section className="card p-4">
+                  <div className="section-heading">
+                    <div>
+                      <span className="eyebrow">BIBLIOTECA DE NEGÓCIOS</span>
+                      <h2>Versões salvas</h2>
+                    </div>
+                    <button
+                      className="secondary"
+                      disabled={!!busy}
+                      onClick={() => list(listOffset)}
+                    >
+                      <RefreshCw size={14} />
+                      Atualizar
+                    </button>
+                  </div>
+                  <label className="saved-search">
+                    <Search size={18} />
+                    <input
+                      aria-label="Buscar nas extrações desta página"
+                      placeholder="Buscar por negócio ou ID nesta página"
+                      value={savedQuery}
+                      onChange={(event) => setSavedQuery(event.target.value)}
+                    />
+                  </label>
+                  {!saved.length && (
+                    <div className="empty-state">
+                      <FolderOpen size={34} />
+                      <h3>
+                        {busy === 'list'
+                          ? 'Carregando suas extrações…'
+                          : 'Seu histórico começa na primeira análise.'}
+                      </h3>
+                      <p>
+                        As novas extrações ficam disponíveis aqui. Os registros da versão antiga
+                        continuam preservados separadamente.
+                      </p>
                       <button
                         className="secondary"
-                        disabled={!!busy && busy !== 'extracting'}
-                        onClick={() =>
-                          busy === 'extracting' ? controller.current?.abort() : collect(snapshot)
-                        }
+                        disabled={!!busy}
+                        onClick={() => setPage('home')}
                       >
-                        {busy === 'extracting' ? 'Pausar coleta' : 'Retomar coleta'}
+                        Analisar um negócio
+                        <ArrowUpRight size={15} />
                       </button>
+                    </div>
+                  )}
+                  {saved.length > 0 &&
+                    !saved.some((row) =>
+                      `${row.deal_id} ${row.title}`
+                        .toLocaleLowerCase('pt-BR')
+                        .includes(savedQuery.toLocaleLowerCase('pt-BR')),
+                    ) && (
+                      <p className="empty-state">
+                        Nenhuma extração corresponde à busca nesta página.
+                      </p>
                     )}
-                  </div>
-                  <p className="text-xs text-slate-500 mt-3">
-                    {snapshot.completed_tasks} etapas preservadas · {snapshot.remainingTasks}{' '}
-                    pendentes
-                    {snapshot.last_resource ? ` · Último recurso: ${snapshot.last_resource}` : ''}
-                  </p>
-                  {busy === 'extracting' && (
-                    <p className="flex gap-2 mt-3 text-sm text-branddi-navy" role="status">
-                      <Loader2 size={18} className="animate-spin" />
-                      Coletando e preservando os dados…
-                    </p>
-                  )}
-                  {!!snapshot.gaps?.length && (
-                    <details
-                      className="mt-4 rounded-lg bg-amber-50 border border-amber-200 p-3"
-                      open
-                    >
-                      <summary className="font-semibold text-sm text-amber-900">
-                        {snapshot.gaps.length} {snapshot.gaps.length === 1 ? 'lacuna' : 'lacunas'}{' '}
-                        na coleta ou leitura
-                      </summary>
-                      <ul className="list-disc pl-5 text-xs mt-2 space-y-2">
-                        {snapshot.gaps.map((gap, i) => (
-                          <li key={i}>
-                            {{
-                              attachment: 'Anexo',
-                              mail: 'E-mail',
-                              organization: 'Empresa',
-                              person: 'Pessoa',
-                              notes: 'Notas',
-                              activities: 'Atividades',
-                              flow: 'Histórico',
-                              deal: 'Negócio',
-                              files: 'Arquivos',
-                            }[gap.resource] || gap.resource}
-                            : {gap.message}
-                          </li>
-                        ))}
-                      </ul>
-                    </details>
-                  )}
-                </section>
-                {ready && (
-                  <>
-                    <nav className="flex overflow-x-auto gap-2" aria-label="Visões do negócio">
-                      {tabs.map(([id, label, Icon]) => (
+                  <div className="saved-list">
+                    {saved
+                      .filter((row) =>
+                        `${row.deal_id} ${row.title}`
+                          .toLocaleLowerCase('pt-BR')
+                          .includes(savedQuery.toLocaleLowerCase('pt-BR')),
+                      )
+                      .map((row) => (
                         <button
                           disabled={!!busy}
-                          key={id}
-                          onClick={() =>
-                            id === 'sources' ? viewSources() : (setTab(id), setSelectedAnswer(null))
-                          }
-                          className={`flex whitespace-nowrap items-center gap-2 px-4 py-3 rounded-lg text-sm font-semibold ${tab === id ? 'bg-branddi-navy text-white' : 'bg-white border border-slate-200 text-slate-600'}`}
+                          onClick={() => load(row.id)}
+                          key={row.id}
+                          className="w-full text-left p-3 rounded-lg bg-slate-50 hover:bg-cyan-50 flex flex-wrap justify-between gap-2"
                         >
-                          <Icon size={16} />
-                          {label}
+                          <span className="text-sm font-semibold">
+                            #{row.deal_id} · {row.title}
+                          </span>
+                          <span className="text-xs text-slate-500">
+                            {date(row.started_at)} · {statusLabel[row.status]}
+                          </span>
                         </button>
                       ))}
-                    </nav>
-                    {tab === 'overview' && (
-                      <div className="space-y-5">
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                          {[
-                            ['Dias no ciclo', snapshot.metrics?.daysOpen],
-                            ['Dias desde contato registrado', snapshot.metrics?.daysInactive],
-                            ['Contatos registrados', snapshot.metrics?.totalActions],
-                            ['Atividades pendentes', snapshot.metrics?.pendingActivities],
-                          ].map(([label, value]) => (
-                            <div className="card p-4" key={label}>
-                              <p className="text-xs text-slate-500">{label}</p>
-                              <p className="text-2xl font-bold mt-2">{value ?? 'Sem evidência'}</p>
-                            </div>
-                          ))}
-                        </div>
-                        <p className="text-xs text-slate-500">
-                          {snapshot.metrics?.contactDefinition} Métricas calculadas em{' '}
-                          {date(snapshot.metrics?.referenceAt)}. Uma nova extração atualiza essa
-                          referência.
+                  </div>
+                  <div className="flex justify-between mt-3">
+                    <button
+                      className="secondary"
+                      disabled={!!busy || !listOffset}
+                      onClick={() => list(Math.max(0, listOffset - 20))}
+                    >
+                      Anterior
+                    </button>
+                    <button
+                      className="secondary"
+                      disabled={!!busy || !hasMore}
+                      onClick={() => list(listOffset + 20)}
+                    >
+                      Próxima
+                    </button>
+                  </div>
+                </section>
+              )}
+              {snapshot && page === 'home' && (
+                <>
+                  <section className="card p-5">
+                    <div className="flex flex-wrap gap-3 justify-between">
+                      <div>
+                        <h2 className="text-xl font-bold text-branddi-navy">{snapshot.title}</h2>
+                        <p className="text-xs text-slate-500 mt-1">
+                          Deal #{snapshot.deal_id} ·{' '}
+                          {snapshot.analysisReady && snapshot.status === 'collecting'
+                            ? 'Texto pronto · anexos pendentes'
+                            : statusLabel[snapshot.status]}
                         </p>
-                        <section className="card p-6">
-                          <h2 className="font-bold">Preparar a próxima conversa</h2>
-                          <p className="text-sm text-slate-500 mt-2">
-                            Consulte as fontes, prepare a abordagem ou gere um briefing antes da
-                            reunião. As respostas mostram fatos, inferências, recomendações e
-                            lacunas separadamente.
-                          </p>
-                          <div className="flex flex-wrap gap-3 mt-4">
-                            <button
-                              disabled={!!busy || !configuration.analysisConfigured}
-                              className="primary"
-                              onClick={() => analyze('briefing')}
-                            >
-                              Gerar briefing
-                            </button>
-                            <button
-                              disabled={!!busy || !configuration.analysisConfigured}
-                              className="secondary"
-                              onClick={() => analyze('prospecting')}
-                            >
-                              Preparar prospecção
-                            </button>
-                          </div>
-                        </section>
+                        <p className="text-xs text-slate-500 mt-1">
+                          Coleta iniciada: {date(snapshot.started_at)} · Finalizada:{' '}
+                          {date(snapshot.completed_at)}
+                        </p>
                       </div>
+                      {snapshot.status !== 'collecting' && (
+                        <button
+                          className="secondary"
+                          disabled={!!busy}
+                          onClick={() => collect(undefined, String(snapshot.deal_id))}
+                        >
+                          <RefreshCw size={14} />
+                          Nova extração
+                        </button>
+                      )}
+                      {snapshot.status === 'collecting' && (
+                        <button
+                          className="secondary"
+                          disabled={!!busy && busy !== 'extracting'}
+                          onClick={() =>
+                            busy === 'extracting' ? controller.current?.abort() : collect(snapshot)
+                          }
+                        >
+                          {busy === 'extracting' ? 'Pausar coleta' : 'Retomar coleta'}
+                        </button>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-500 mt-3">
+                      {snapshot.completed_tasks} etapas preservadas · {snapshot.remainingTasks}{' '}
+                      pendentes
+                      {snapshot.last_resource ? ` · Último recurso: ${snapshot.last_resource}` : ''}
+                    </p>
+                    {busy === 'extracting' && (
+                      <p className="flex gap-2 mt-3 text-sm text-branddi-navy" role="status">
+                        <Loader2 size={18} className="animate-spin" />
+                        {snapshot.analysisReady
+                          ? `Texto coletado. Preservando ${snapshot.pendingAttachments || snapshot.remainingTasks} arquivos em segundo plano…`
+                          : 'Reunindo o texto do negócio, histórico, pessoas e e-mails…'}
+                      </p>
                     )}
-                    {['briefing', 'prospecting', 'question'].includes(tab) && (
-                      <div className="space-y-5">
-                        <section className="card p-5">
-                          {tab === 'question' ? (
-                            <form
-                              onSubmit={(event) => {
-                                event.preventDefault();
-                                void analyze('question');
-                              }}
-                              className="space-y-3"
-                            >
-                              <label htmlFor="question" className="block font-semibold">
-                                O que você precisa saber sobre este negócio?
-                              </label>
-                              <textarea
-                                id="question"
-                                className="input w-full min-h-24"
-                                maxLength={2000}
-                                value={question}
-                                onChange={(event) => setQuestion(event.target.value)}
-                                placeholder="Qual foi o último compromisso assumido pelo cliente e onde isso está registrado?"
-                                required
-                              />
+                    <CollectionGaps gaps={snapshot.gaps} />
+                  </section>
+                  {ready && (
+                    <>
+                      <nav className="deal-tabs" aria-label="Visões do negócio">
+                        {tabs.map(([id, label, Icon]) => (
+                          <button
+                            disabled={!!busy}
+                            key={id}
+                            onClick={() =>
+                              id === 'sources'
+                                ? viewSources()
+                                : (setTab(id), setSelectedAnswer(null))
+                            }
+                            aria-current={tab === id ? 'page' : undefined}
+                            className={tab === id ? 'active' : ''}
+                          >
+                            <Icon size={16} />
+                            {label}
+                          </button>
+                        ))}
+                      </nav>
+                      {tab === 'overview' && (
+                        <div className="space-y-5">
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                            {[
+                              ['Dias no ciclo', snapshot.metrics?.daysOpen],
+                              ['Dias desde contato registrado', snapshot.metrics?.daysInactive],
+                              ['Contatos registrados', snapshot.metrics?.totalActions],
+                              ['Atividades pendentes', snapshot.metrics?.pendingActivities],
+                            ].map(([label, value]) => (
+                              <div className="card p-4" key={label}>
+                                <p className="text-xs text-slate-500">{label}</p>
+                                <p className="text-2xl font-bold mt-2">
+                                  {value ?? 'Sem evidência'}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                          <p className="text-xs text-slate-500">
+                            {snapshot.metrics?.contactDefinition} Métricas calculadas em{' '}
+                            {date(snapshot.metrics?.referenceAt)}. Uma nova extração atualiza essa
+                            referência.
+                          </p>
+                          <ReadyNote />
+                          <AnswerPanel
+                            record={answers.find((answer) => answer.mode === 'overview')}
+                            onSource={openSource}
+                            onCopy={copy}
+                          />
+                          <section className="card p-6">
+                            <h2 className="font-bold">Preparar a próxima conversa</h2>
+                            <p className="text-sm text-slate-500 mt-2">
+                              Consulte as fontes, prepare a abordagem ou gere um briefing antes da
+                              reunião. As respostas mostram fatos, inferências, recomendações e
+                              lacunas separadamente.
+                            </p>
+                            <div className="flex flex-wrap gap-3 mt-4">
                               <button
-                                className="primary"
                                 disabled={!!busy || !configuration.analysisConfigured}
+                                className="primary"
+                                onClick={() => analyze('briefing')}
                               >
-                                Responder com fontes
+                                Gerar briefing
                               </button>
-                            </form>
-                          ) : (
-                            <div className="flex flex-wrap items-center justify-between gap-3">
-                              <h2 className="font-bold">
-                                {tab === 'briefing'
-                                  ? 'Preparação da reunião'
-                                  : 'Preparação da prospecção'}
-                              </h2>
                               <button
-                                className="primary"
                                 disabled={!!busy || !configuration.analysisConfigured}
-                                onClick={() => analyze(tab)}
+                                className="secondary"
+                                onClick={() => analyze('prospecting')}
                               >
-                                Gerar nova análise desta versão
+                                Preparar prospecção
                               </button>
                             </div>
-                          )}
-                          <p className="mt-3 text-xs text-slate-500">
-                            Modelo: {configuration.model || 'não configurado'}. A análise usa a
-                            versão coletada em {date(snapshot.completed_at)}.
-                          </p>
-                          {!configuration.analysisConfigured && (
-                            <p className="mt-2 text-sm text-amber-800">
-                              Configure o modelo e a chave de IA no servidor para habilitar as
-                              respostas.
+                          </section>
+                        </div>
+                      )}
+                      {['briefing', 'prospecting', 'question'].includes(tab) && (
+                        <div className="space-y-5">
+                          <section className="card p-5">
+                            {tab === 'question' ? (
+                              <form
+                                onSubmit={(event) => {
+                                  event.preventDefault();
+                                  void analyze('question');
+                                }}
+                                className="space-y-3"
+                              >
+                                <label htmlFor="question" className="block font-semibold">
+                                  O que você precisa saber sobre este negócio?
+                                </label>
+                                <textarea
+                                  id="question"
+                                  className="input w-full min-h-24"
+                                  maxLength={2000}
+                                  value={question}
+                                  onChange={(event) => setQuestion(event.target.value)}
+                                  placeholder="Qual foi o último compromisso assumido pelo cliente e onde isso está registrado?"
+                                  required
+                                />
+                                <button
+                                  className="primary"
+                                  disabled={!!busy || !configuration.analysisConfigured}
+                                >
+                                  Responder com fontes
+                                </button>
+                              </form>
+                            ) : (
+                              <div className="flex flex-wrap items-center justify-between gap-3">
+                                <h2 className="font-bold">
+                                  {tab === 'briefing'
+                                    ? 'Preparação da reunião'
+                                    : 'Preparação da prospecção'}
+                                </h2>
+                                <button
+                                  className="primary"
+                                  disabled={!!busy || !configuration.analysisConfigured}
+                                  onClick={() => analyze(tab)}
+                                >
+                                  Gerar nova análise desta versão
+                                </button>
+                              </div>
+                            )}
+                            <p className="mt-3 text-xs text-slate-500">
+                              Modelo: {configuration.model || 'não configurado'}. A análise usa a
+                              versão coletada em {date(snapshot.completed_at)}.
                             </p>
+                            {!configuration.analysisConfigured && (
+                              <p className="mt-2 text-sm text-amber-800">
+                                Configure o modelo e a chave de IA no servidor para habilitar as
+                                respostas.
+                              </p>
+                            )}
+                          </section>
+                          {answers.filter((answer) => answer.mode === tab).length > 1 && (
+                            <select
+                              aria-label="Respostas anteriores"
+                              className="input max-w-full"
+                              value={currentAnswer?.id || ''}
+                              onChange={(event) =>
+                                setSelectedAnswer(
+                                  answers.find((answer) => answer.id === event.target.value),
+                                )
+                              }
+                            >
+                              {answers
+                                .filter((answer) => answer.mode === tab)
+                                .map((answer) => (
+                                  <option key={answer.id} value={answer.id}>
+                                    {date(answer.created_at)} ·{' '}
+                                    {answer.question || 'Análise desta versão'}
+                                  </option>
+                                ))}
+                            </select>
                           )}
-                        </section>
-                        {answers.filter((answer) => answer.mode === tab).length > 1 && (
-                          <select
-                            aria-label="Respostas anteriores"
-                            className="input max-w-full"
-                            value={currentAnswer?.id || ''}
-                            onChange={(event) =>
-                              setSelectedAnswer(
-                                answers.find((answer) => answer.id === event.target.value),
-                              )
+                          <AnswerPanel
+                            record={
+                              currentAnswer ||
+                              (tab !== 'question'
+                                ? answers.find((answer) => answer.mode === 'overview')
+                                : null)
                             }
-                          >
-                            {answers
-                              .filter((answer) => answer.mode === tab)
-                              .map((answer) => (
-                                <option key={answer.id} value={answer.id}>
-                                  {date(answer.created_at)} ·{' '}
-                                  {answer.question || 'Análise desta versão'}
-                                </option>
-                              ))}
-                          </select>
-                        )}
-                        <AnswerPanel record={currentAnswer} onSource={openSource} onCopy={copy} />
-                      </div>
-                    )}
-                    {tab === 'sources' && sourceData && (
-                      <EvidencePanel
-                        key={snapshot.id}
-                        snapshot={snapshot}
-                        initialSources={sourceData}
-                        onError={setError}
-                      />
-                    )}
-                  </>
-                )}
-              </>
-            )}
-          </>
-        )}
-        {busy === 'analysis' && (
-          <div
-            role="status"
-            className="fixed bottom-5 left-1/2 -translate-x-1/2 bg-branddi-navy text-white shadow-xl rounded-xl p-4 flex items-center gap-3"
-          >
-            <Loader2 className="animate-spin" size={18} />
-            Analisando as evidências e validando as citações…
-          </div>
-        )}
-        {openedSource && (
-          <div
-            className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Fonte da resposta"
-          >
-            <div className="bg-white rounded-xl p-6 max-w-3xl w-full max-h-[85vh] overflow-auto">
-              <div className="flex justify-between gap-3">
-                <h2 className="font-bold">{openedSource.title}</h2>
-                <button className="secondary" onClick={() => setOpenedSource(null)}>
-                  Fechar
-                </button>
-              </div>
-              <p className="text-xs text-slate-500 mt-2">{openedSource.id}</p>
-              <pre className="whitespace-pre-wrap break-words mt-4 text-sm">
-                {openedSource.text}
-              </pre>
+                            onSource={openSource}
+                            onCopy={copy}
+                          />
+                        </div>
+                      )}
+                      {['details', 'timeline'].includes(tab) && (
+                        <DealDetails
+                          key={`${snapshot.id}:${tab}`}
+                          snapshotId={snapshot.id}
+                          mode={tab}
+                          onSource={openSource}
+                        />
+                      )}
+                      {tab === 'sources' && sourceData && (
+                        <EvidencePanel
+                          key={snapshot.id}
+                          snapshot={snapshot}
+                          initialSources={sourceData}
+                          onError={setError}
+                        />
+                      )}
+                    </>
+                  )}
+                </>
+              )}
+            </>
+          )}
+          {busy === 'analysis' && (
+            <div
+              role="status"
+              className="fixed bottom-5 left-1/2 -translate-x-1/2 bg-branddi-navy text-white shadow-xl rounded-xl p-4 flex items-center gap-3"
+            >
+              <Loader2 className="animate-spin" size={18} />
+              Analisando as evidências e validando as citações…
             </div>
-          </div>
-        )}
-      </main>
+          )}
+          {openedSource && (
+            <SourceDialog source={openedSource} onClose={() => setOpenedSource(null)} />
+          )}
+        </main>
+        <footer className="workspace-footer">
+          <span>Branddi · CRM Intelligence</span>
+          <span>Contexto preservado. Decisões bem informadas.</span>
+        </footer>
+      </div>
     </div>
   );
 }
