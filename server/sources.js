@@ -72,6 +72,16 @@ export function buildSources(pages) {
             null,
           title: record.subject || record.title || record.name || `${page.kind} #${rawId}`,
           text: content,
+          ...(page.kind === 'deal'
+            ? {
+                ownerId:
+                  record.owner_id?.id ||
+                  record.owner_id ||
+                  record.user_id?.id ||
+                  record.user_id ||
+                  null,
+              }
+            : {}),
           hash: createHash('sha256').update(content).digest('hex'),
         });
       }
@@ -96,7 +106,21 @@ export function selectContext(sources, question, maximum = 100000) {
     .toLocaleLowerCase('pt-BR')
     .split(/[^\p{L}\p{N}]+/u)
     .filter((word) => word.length > 2);
-  const ranked = sources
+  const ownerId = sources.find((source) => source.kind === 'deal')?.ownerId;
+  const candidates = sources
+    .filter(
+      (source) =>
+        !/Fields$/.test(source.kind) &&
+        (source.kind !== 'users' || (ownerId && String(source.recordId) === String(ownerId))),
+    )
+    .map((source) => ({
+      ...source,
+      text: source.text
+        .split('\n')
+        .filter((line) => !/: não informado$/.test(line))
+        .join('\n'),
+    }));
+  const ranked = candidates
     .map((source) => ({
       source,
       score: terms.reduce(
@@ -120,8 +144,11 @@ export function selectContext(sources, question, maximum = 100000) {
       used += cost;
     }
   }
-  // Reserve room for the deal, organization, people, and every resource category.
-  for (const kind of ['deal', 'organization', 'person', ...new Set(sources.map((s) => s.kind))]) {
+  // Keep every meaningful field of the deal/company and the contact map ahead
+  // of general activity history. Directory entries are not evidence of ownership.
+  for (const kind of ['deal', 'organization', 'users', 'person'])
+    for (const source of candidates.filter((source) => source.kind === kind)) add(source);
+  for (const kind of ['notes', 'activities', 'mailIndex', 'flow', 'attachment']) {
     const first = ranked.find((entry) => entry.source.kind === kind);
     if (first) add(first.source);
   }
@@ -133,7 +160,7 @@ export function selectContext(sources, question, maximum = 100000) {
       selectedChunks: selected.length,
       omittedChunks: sources.length - selected.length,
       characters: used,
-      selection: 'lexical-relevance-and-recency-v1',
+      selection: 'complete-core-fields-relevance-and-recency-v2',
       sourceIds: selected.map((s) => s.id),
     },
   };
