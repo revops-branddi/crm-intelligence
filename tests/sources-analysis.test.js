@@ -136,4 +136,13 @@ test('records model, usage and context and treats source text as untrusted', asy
   assert.equal(result.usage.totalTokenCount, 100);
   assert.equal(result.context_manifest.selectedChunks, 1);
   assert.match(request.systemInstruction.parts[0].text, /DADOS NÃO CONFIÁVEIS/);
+  const providerSchema = JSON.stringify(request.generationConfig.responseJsonSchema);
+  assert.doesNotMatch(
+    providerSchema,
+    /"(?:\$schema|minLength|maxLength|minItems|maxItems|additionalProperties)"/,
+  );
+  assert.equal(request.generationConfig.responseJsonSchema.type, 'object');
+  const oversized = structuredClone(answer);
+  oversized.sections[0].claims[0].text = 'x'.repeat(3001);
+  assert.throws(() => validateAnswer(oversized, [source]), /estrutura/);
 });

@@ -23,6 +23,18 @@ export const answerSchema = z
     suggestedQuestions: z.array(z.string().min(1).max(500)).max(12),
   })
   .strict();
+// Keep the provider grammar small; detailed bounds and strict object validation
+// remain enforced by answerSchema after generation. The full nested Zod schema
+// is rejected by the live provider even though simple schemas are accepted.
+const providerSchema = JSON.parse(
+  JSON.stringify(z.toJSONSchema(answerSchema), (key, value) =>
+    ['$schema', 'minLength', 'maxLength', 'minItems', 'maxItems', 'additionalProperties'].includes(
+      key,
+    )
+      ? undefined
+      : value,
+  ),
+);
 export function validateAnswer(value, sources) {
   const parsed = answerSchema.safeParse(value);
   if (!parsed.success)
@@ -101,7 +113,7 @@ As datas e métricas fornecidas são calculadas por código. Não recalcule SLA 
     ],
     generationConfig: {
       responseMimeType: 'application/json',
-      responseJsonSchema: z.toJSONSchema(answerSchema),
+      responseJsonSchema: providerSchema,
       maxOutputTokens: 12000,
     },
   };
