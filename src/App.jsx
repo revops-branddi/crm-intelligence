@@ -773,8 +773,22 @@ function Workspace({ user, logout }) {
                             )}
                             <p className="mt-3 text-xs text-slate-500">
                               Modelo: {configuration.model || 'não configurado'}. A análise usa a
-                              versão coletada em {date(snapshot.completed_at)}.
+                              versão coletada em{' '}
+                              {date(
+                                snapshot.completed_at ||
+                                  snapshot.metrics?.referenceAt ||
+                                  snapshot.started_at,
+                              )}
+                              .
                             </p>
+                            {tab !== 'question' &&
+                              !currentAnswer &&
+                              answers.some((answer) => answer.mode === 'overview') && (
+                                <p className="mt-2 text-sm text-slate-600">
+                                  Exibindo a análise geral salva. Você pode gerar uma análise
+                                  específica desta aba usando o mesmo texto coletado.
+                                </p>
+                              )}
                             {!configuration.analysisConfigured && (
                               <p className="mt-2 text-sm text-amber-800">
                                 Configure o modelo e a chave de IA no servidor para habilitar as
