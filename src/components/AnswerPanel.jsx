@@ -3,9 +3,14 @@ const labels = { fact: 'Fato registrado', inference: 'Inferência', recommendati
 export function AnswerPanel({ record, onSource, onCopy }) {
   if (!record)
     return (
-      <p className="card p-8 text-slate-500">
-        Gere uma análise para consultar as conclusões e suas fontes.
-      </p>
+      <div className="card empty-state">
+        <FileSearch size={30} />
+        <h3>Os dados e a análise têm seu próprio espaço.</h3>
+        <p>
+          Consulte o texto preservado em Dados e fontes. A análise automática aparece aqui quando
+          estiver pronta; para uma versão antiga sem análise, use uma das ações abaixo.
+        </p>
+      </div>
     );
   const answer = record.answer;
   const copy = () =>
@@ -36,7 +41,7 @@ export function AnswerPanel({ record, onSource, onCopy }) {
           <h2 className="text-lg font-bold text-branddi-navy mb-4">{section.title}</h2>
           <div className="space-y-5">
             {section.claims.map((claim, i) => (
-              <article key={i}>
+              <article className="answer-claim" key={i}>
                 <span
                   className={`text-xs font-bold ${claim.kind === 'fact' ? 'text-emerald-700' : claim.kind === 'inference' ? 'text-amber-700' : 'text-indigo-700'}`}
                 >

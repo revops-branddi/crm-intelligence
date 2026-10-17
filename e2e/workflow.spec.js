@@ -58,7 +58,10 @@ function answer(mode, question = '') {
     },
   };
 }
-async function fixture(page, { connected = true, failAnalysis = false } = {}) {
+async function fixture(
+  page,
+  { connected = true, failAnalysis = false, cached = false, coreFirst = false } = {},
+) {
   const calls = [];
   let isConnected = connected,
     steps = 0;
@@ -104,6 +107,11 @@ async function fixture(page, { connected = true, failAnalysis = false } = {}) {
         isConnected = false;
         body = { connected: false };
         break;
+      case 'latest':
+        body = cached
+          ? { snapshot, answers: [answer('overview')] }
+          : { snapshot: null, answers: [] };
+        break;
       case 'start':
         body = {
           snapshot: {
@@ -118,6 +126,20 @@ async function fixture(page, { connected = true, failAnalysis = false } = {}) {
         break;
       case 'step':
         steps++;
+        if (coreFirst && steps === 1) {
+          body = {
+            snapshot: {
+              ...snapshot,
+              status: 'collecting',
+              completed_at: null,
+              analysisReady: true,
+              completed_tasks: 19,
+              remainingTasks: 1,
+              pendingAttachments: 1,
+            },
+          };
+          break;
+        }
         body = {
           snapshot:
             steps < 2
@@ -152,6 +174,9 @@ async function fixture(page, { connected = true, failAnalysis = false } = {}) {
       case 'sources':
         body = { sources: [source], total: 1 };
         break;
+      case 'text':
+        body = { text: source.text, totalCharacters: source.text.length, nextOffset: null };
+        break;
       case 'source':
         body = { source };
         break;
@@ -184,9 +209,10 @@ test('connects without persisting token and extracts before analyzing with evide
   await page.getByLabel('Token Pipedrive').fill('synthetic-pipedrive-token-value');
   await page.getByRole('button', { name: 'Conectar', exact: true }).click();
   await page.getByLabel('ID do negócio').fill('7');
-  await page.getByRole('button', { name: 'Nova extração', exact: true }).click();
+  await page.getByRole('button', { name: 'Analisar negócio', exact: true }).click();
   await expect(page.getByText('20 etapas preservadas', { exact: false })).toBeVisible();
-  expect(calls.some((call) => call.action === 'answer')).toBe(false);
+  await expect(page.getByText('A reunião foi confirmada pelo cliente.')).toBeVisible();
+  expect(calls.some((call) => call.action === 'answer' && call.mode === 'overview')).toBe(true);
   expect(await page.evaluate(() => localStorage.getItem('pipedriveToken'))).toBeNull();
   await page.getByRole('button', { name: 'Gerar briefing', exact: true }).click();
   await expect(page.getByText('A reunião foi confirmada pelo cliente.')).toBeVisible();
@@ -194,6 +220,8 @@ test('connects without persisting token and extracts before analyzing with evide
   await expect(page.getByRole('dialog')).toContainText(source.text);
   await page.getByRole('button', { name: 'Fechar', exact: true }).click();
   await page.getByRole('button', { name: 'Dados e fontes', exact: true }).click();
+  await page.getByRole('button', { name: 'Ler texto consolidado' }).click();
+  await expect(page.locator('.raw-text')).toContainText(source.text);
   await page.getByRole('button', { name: 'Ver original', exact: true }).click();
   await expect(page.getByText('Resposta original do CRM')).toBeVisible();
   await page.screenshot({ path: 'test-results/crm-sources-desktop.png', fullPage: true });
@@ -222,9 +250,8 @@ test('saved versions stay visibly historical and answer user questions', async (
 test('invalid AI response displays an error and preserves extracted data', async ({ page }) => {
   await fixture(page, { failAnalysis: true });
   await page.getByLabel('ID do negócio').fill('7');
-  await page.getByRole('button', { name: 'Nova extração' }).click();
+  await page.getByRole('button', { name: 'Analisar negócio' }).click();
   await expect(page.getByText('20 etapas preservadas', { exact: false })).toBeVisible();
-  await page.getByRole('button', { name: 'Gerar briefing', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('A IA retornou conteúdo inválido.');
   await expect(page.getByText('Conta de demonstração', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Dados e fontes', exact: true }).click();
@@ -235,4 +262,35 @@ test('logout clears visible account data', async ({ page }) => {
   await page.getByRole('button', { name: 'Sair', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Continuar com Google' })).toBeVisible();
   await expect(page.getByLabel('ID do negócio')).toHaveCount(0);
+});
+
+test('opens a saved analysis without another extraction or model call', async ({ page }) => {
+  const calls = await fixture(page, { cached: true });
+  await page.getByLabel('ID do negócio').fill('7');
+  await page.getByRole('button', { name: 'Analisar negócio', exact: true }).click();
+  await expect(page.getByText('A reunião foi confirmada pelo cliente.')).toBeVisible();
+  expect(calls.some((call) => ['start', 'step', 'answer'].includes(call.action))).toBe(false);
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.screenshot({ path: 'test-results/crm-overview-desktop.png', fullPage: false });
+});
+test('generates an automatic result before collecting remaining attachments', async ({ page }) => {
+  const calls = await fixture(page, { coreFirst: true });
+  await page.getByLabel('ID do negócio').fill('7');
+  await page.getByRole('button', { name: 'Analisar negócio', exact: true }).click();
+  await expect(page.getByText('A reunião foi confirmada pelo cliente.')).toBeVisible();
+  await expect(page.getByText('Coleta finalizada.', { exact: false })).toBeVisible();
+  const actions = calls
+    .filter((call) => ['step', 'answer'].includes(call.action))
+    .map((call) => call.action);
+  expect(actions).toEqual(['step', 'answer', 'step']);
+});
+test('connection and navigation remain usable on a narrow screen', async ({ page }) => {
+  await fixture(page, { connected: false });
+  await page.screenshot({ path: 'test-results/crm-connection-desktop.png', fullPage: false });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByLabel('Token Pipedrive')).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
+  await page.screenshot({ path: 'test-results/crm-connection-mobile.png', fullPage: true });
 });

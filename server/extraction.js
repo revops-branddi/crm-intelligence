@@ -1,6 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { checked, HttpError } from './errors.js';
-import { advancePlan, discoverTasks, initialPlan, taskKey } from './extraction-plan.js';
+import {
+  advancePlan,
+  coveredMailTasks,
+  discoverTasks,
+  initialPlan,
+  taskKey,
+} from './extraction-plan.js';
 import { allPages, ownedSnapshot, publicSnapshot } from './store.js';
 import { collectAttachment } from './attachments.js';
 import { snapshotMetrics } from './sources.js';
@@ -53,7 +59,53 @@ export async function startExtraction(db, user, connection, dealId, deal) {
   );
   return publicSnapshot(row);
 }
-export async function extractionStep({ db, user, snapshot, client, currentDeal }) {
+async function materialize({ db, snapshot, client }, task) {
+  const key = taskKey(task);
+  const existing = checked(
+    await db
+      .from('crm_raw_pages')
+      .select('*')
+      .eq('snapshot_id', snapshot.id)
+      .eq('task_key', key)
+      .maybeSingle(),
+  );
+  if (existing) return { page: existing };
+  let payload = null,
+    failure = null;
+  try {
+    payload =
+      task.kind === 'attachment'
+        ? await collectAttachment(task, snapshot, client, db)
+        : await client.get(task.path, task.params);
+  } catch (error) {
+    if (error.code === 'size_limit' && task.pagination && Number(task.params.limit) > 1)
+      return {
+        smaller: {
+          ...task,
+          params: { ...task.params, limit: Math.max(1, Math.floor(task.params.limit / 2)) },
+        },
+      };
+    if (![400, 403, 404, 410, 413, 422].includes(error.status) || task.kind === 'deal') throw error;
+    failure = { status: error.status, code: error.code, message: error.message };
+  }
+  const page = {
+    snapshot_id: snapshot.id,
+    task_key: key,
+    kind: task.kind,
+    request: task,
+    payload,
+    failure,
+  };
+  checked(await db.from('crm_raw_pages').insert(page));
+  return { page };
+}
+export async function extractionStep(args) {
+  return extractionBatch(args, { maxTasks: 1, concurrency: 1 });
+}
+export async function extractionBatch(
+  { db, user, snapshot, client, currentDeal },
+  { maxTasks = 32, concurrency = 4, budgetMs = 25000 } = {},
+) {
   if (snapshot.status !== 'collecting') return publicSnapshot(snapshot);
   const lease = randomUUID();
   if (
@@ -67,93 +119,99 @@ export async function extractionStep({ db, user, snapshot, client, currentDeal }
       'busy',
       5,
     );
+  const started = Date.now();
   try {
-    // Reload under lease so concurrent tabs never advance a stale queue.
     snapshot = await ownedSnapshot(db, user.id, snapshot.id);
-    const task = snapshot.pending[0];
-    if (!task) throw new HttpError(500, 'Fila de extração inconsistente.', 'invalid_queue');
-    const key = taskKey(task);
-    let page = checked(
-      await db
-        .from('crm_raw_pages')
-        .select('*')
-        .eq('snapshot_id', snapshot.id)
-        .eq('task_key', key)
-        .maybeSingle(),
+    snapshot.pending.sort(
+      (a, b) => Number(a.kind === 'attachment') - Number(b.kind === 'attachment'),
     );
-    if (!page) {
-      let payload = null,
-        failure = null;
-      try {
-        payload =
-          task.kind === 'attachment'
-            ? await collectAttachment(task, snapshot, client, db)
-            : await client.get(task.path, task.params);
-      } catch (error) {
-        if (error.code === 'size_limit' && task.pagination && Number(task.params.limit) > 1) {
-          // Retry the same position with a smaller page; never skip all records in a large page.
-          const smaller = {
-            ...task,
-            params: { ...task.params, limit: Math.max(1, Math.floor(task.params.limit / 2)) },
-          };
-          return await saveProgress(db, user, snapshot, lease, {
+    if (!snapshot.pending.length)
+      throw new HttpError(500, 'Fila de extração inconsistente.', 'invalid_queue');
+    let processed = 0;
+    while (snapshot.pending.length && processed < maxTasks) {
+      const coreTasks = snapshot.pending.filter((task) => task.kind !== 'attachment');
+      const tasks = (coreTasks.length ? coreTasks : snapshot.pending).slice(
+        0,
+        Math.min(concurrency, maxTasks - processed),
+      );
+      // All workers settle before releasing the lease. Originals are saved first;
+      // replay after a failure reuses them, even when the queue checkpoint failed.
+      const results = await Promise.allSettled(
+        tasks.map((task) => materialize({ db, snapshot, client }, task)),
+      );
+      let transient = null,
+        resized = false;
+      for (let i = 0; i < tasks.length; i++) {
+        const task = tasks[i];
+        if (taskKey(snapshot.pending[0] || {}) !== taskKey(task)) continue; // covered by a full mail index
+        const result = results[i];
+        if (result.status === 'rejected') {
+          transient = result.reason;
+          break;
+        }
+        if (result.value.smaller) {
+          const smaller = result.value.smaller;
+          snapshot = {
+            ...snapshot,
             pending: [smaller, ...snapshot.pending.slice(1)],
             seen_tasks: [...snapshot.seen_tasks, taskKey(smaller)],
-            lease_id: null,
-            lease_until: null,
-          });
+          };
+          resized = true;
+          break;
         }
-        // Transient errors keep the cursor. Only permanent resource failures become visible gaps.
-        if (![400, 403, 404, 410, 413, 422].includes(error.status) || task.kind === 'deal')
-          throw error;
-        failure = { status: error.status, code: error.code, message: error.message };
+        const { page } = result.value;
+        const gaps = [...snapshot.gaps];
+        let discovered = [];
+        if (page.failure) gaps.push({ resource: task.kind, path: task.path, ...page.failure });
+        else {
+          discovered =
+            task.kind === 'deal'
+              ? initialPlan(page.payload.data)
+              : discoverTasks(task, page.payload);
+          if (task.kind === 'attachment' && page.payload.data.textStatus !== 'readable')
+            gaps.push({
+              resource: 'attachment',
+              path: task.path,
+              code: page.payload.data.textStatus,
+              message: page.payload.data.note,
+            });
+        }
+        snapshot = {
+          ...snapshot,
+          ...advancePlan(snapshot, task, discovered, coveredMailTasks(task, page.payload)),
+          gaps,
+        };
+        processed++;
       }
-      page = {
-        snapshot_id: snapshot.id,
-        task_key: key,
-        kind: task.kind,
-        request: task,
-        payload,
-        failure,
-      };
-      checked(await db.from('crm_raw_pages').insert(page));
+      const { pending, seen_tasks, completed_tasks, last_resource, gaps } = snapshot;
+      const next = { pending, seen_tasks, completed_tasks, last_resource, gaps };
+      const coreJustFinished =
+        pending.length > 0 &&
+        pending.every((task) => task.kind === 'attachment') &&
+        !snapshot.metrics?.referenceAt;
+      if (coreJustFinished)
+        next.metrics = snapshotMetrics(await allPages(db, snapshot.id), new Date().toISOString());
+      if (!pending.length) {
+        const completedAt = new Date().toISOString();
+        const pages = await allPages(db, snapshot.id);
+        const originalDeal = pages.find((p) => p.kind === 'deal')?.payload?.data;
+        if (originalDeal?.update_time !== currentDeal.update_time)
+          gaps.push({
+            resource: 'deal',
+            code: 'changed_during_collection',
+            message:
+              'O negócio mudou durante a coleta. Gere uma nova extração para obter uma versão mais recente.',
+          });
+        next.status = gaps.length ? 'partial' : 'complete';
+        next.completed_at = completedAt;
+        next.metrics = snapshotMetrics(pages, completedAt);
+      }
+      await saveProgress(db, user, snapshot, lease, next);
+      snapshot = { ...snapshot, ...next };
+      if (transient) throw transient;
+      if (coreJustFinished || resized || Date.now() - started >= budgetMs) break;
     }
-    const gaps = [...snapshot.gaps];
-    let discovered = [];
-    if (page.failure) gaps.push({ resource: task.kind, path: task.path, ...page.failure });
-    else {
-      discovered =
-        task.kind === 'deal' ? initialPlan(page.payload.data) : discoverTasks(task, page.payload);
-      if (task.kind === 'attachment' && page.payload.data.textStatus !== 'readable')
-        gaps.push({
-          resource: 'attachment',
-          path: task.path,
-          code: page.payload.data.textStatus,
-          message: page.payload.data.note,
-        });
-    }
-    const next = {
-      ...advancePlan(snapshot, task, discovered),
-      gaps,
-      lease_id: null,
-      lease_until: null,
-    };
-    if (!next.pending.length) {
-      const completedAt = new Date().toISOString();
-      const pages = await allPages(db, snapshot.id);
-      const originalDeal = pages.find((p) => p.kind === 'deal')?.payload?.data;
-      if (originalDeal?.update_time !== currentDeal.update_time)
-        gaps.push({
-          resource: 'deal',
-          code: 'changed_during_collection',
-          message:
-            'O negócio mudou durante a coleta. Gere uma nova extração para obter uma versão mais recente.',
-        });
-      next.status = gaps.length ? 'partial' : 'complete';
-      next.completed_at = completedAt;
-      next.metrics = snapshotMetrics(pages, completedAt);
-    }
-    return await saveProgress(db, user, snapshot, lease, next);
+    return await saveProgress(db, user, snapshot, lease, { lease_id: null, lease_until: null });
   } catch (error) {
     await db
       .from('crm_snapshots')

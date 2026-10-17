@@ -16,15 +16,24 @@ export async function readBytes(response, maximum) {
     );
   const chunks = [];
   let size = 0;
-  for await (const chunk of response.body) {
-    size += chunk.length;
-    if (size > maximum)
-      throw new HttpError(
-        413,
-        'Conteúdo excede o limite configurado; original não baixado.',
-        'size_limit',
-      );
-    chunks.push(chunk);
+  try {
+    for await (const chunk of response.body) {
+      size += chunk.length;
+      if (size > maximum)
+        throw new HttpError(
+          413,
+          'Conteúdo excede o limite configurado; original não baixado.',
+          'size_limit',
+        );
+      chunks.push(chunk);
+    }
+  } catch (error) {
+    if (error instanceof HttpError) throw error;
+    throw new HttpError(
+      504,
+      'A transferência do conteúdo não respondeu a tempo; tente retomar.',
+      'upstream_timeout',
+    );
   }
   return Buffer.concat(chunks);
 }
@@ -65,7 +74,18 @@ export function pipedriveClient(token, fetcher = fetch) {
           'Download externo não permitido; arquivo registrado como lacuna.',
           'unsupported_download',
         );
-      response = await fetcher(location, { signal: AbortSignal.timeout(20000), redirect: 'error' });
+      try {
+        response = await fetcher(location, {
+          signal: AbortSignal.timeout(20000),
+          redirect: 'error',
+        });
+      } catch {
+        throw new HttpError(
+          504,
+          'O download do anexo não respondeu a tempo; a coleta pode ser retomada.',
+          'upstream_timeout',
+        );
+      }
     }
     if (!response.ok) {
       const retry = Math.min(60, Math.max(1, Number(response.headers.get('retry-after')) || 5));
