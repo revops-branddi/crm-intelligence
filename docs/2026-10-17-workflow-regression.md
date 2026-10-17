@@ -21,3 +21,11 @@ No mesmo negócio, o texto principal ficou pronto em 27,071 segundos: 1.002 even
 Gemini 3.8 Flash excedeu o limite de 75 segundos nos testes desse contexto. Gemini 3.6 Flash com raciocínio `low` concluiu em 13,924 segundos, incluindo preparação e persistência; retornou oito seções e 14 conclusões com citações validadas. Modelo escolhido por esse teste, não pela numeração. Os tempos de coleta e análise foram medidos separadamente; não são uma garantia de latência.
 
 A primeira resposta não inclui os arquivos ainda pendentes. Os dados anteriores são mantidos. A análise do cache legado deste negócio é de maio de 2026 e não representa a mesma data da coleta atual.
+
+## Conferência de conteúdo e disponibilidade
+
+A conferência real também revelou dois riscos na seleção de contexto: apenas a primeira parte dos campos do negócio era reservada e usuários genéricos do diretório podiam ser confundidos com o proprietário. Agora todas as partes dos campos, o usuário correspondente ao proprietário e o mapa de pessoas têm prioridade. Análises amplas também reservam os cinco registros mais recentes de e-mails, notas e atividades, além dos resultados por relevância. O orçamento dessas análises é de 180 mil caracteres, com cobertura declarada; isso não equivale a consultar todo o acervo em cada resposta.
+
+O provedor apresentou erros transitórios de alta demanda (HTTP 503) tanto no Gemini 3.6 quanto no 3.5 durante a validação. `GEMINI_FALLBACK_MODEL` permite uma única tentativa alternativa apenas para erros 5xx, dentro do mesmo prazo total de 75 segundos. O modelo efetivamente usado é registrado. Erros de citação, limite de uso, autenticação e respostas concluídas não disparam essa alternativa. Se ambos falham, a interface mantém os dados e informa a indisponibilidade temporária.
+
+Com a prioridade de campos corrigida, uma análise real do Gemini 3.5 concluiu em 19,304 segundos e reconheceu Miriam como proprietária e a data prevista de 22/10/2026 às 14h. Os tempos dependem do provedor e foram medidos separadamente da coleta. As citações continuam sendo validadas contra os originais completos.

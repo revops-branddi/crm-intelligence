@@ -168,3 +168,76 @@ test('all populated deal fields and the actual owner precede irrelevant director
   assert.ok(!result.sources.some((s) => s.id === 'users:11'));
   assert.ok(!result.sources.find((s) => s.id === 'deal:1:1').text.includes('não informado'));
 });
+
+test('broad analysis reserves recent primary mail and notes despite verbose old matches', () => {
+  const sources = Array.from({ length: 30 }, (_, i) => ({
+    id: `notes:${i}`,
+    kind: 'notes',
+    date: '2020-01-01',
+    text: `reunião proposta orçamento ${'x'.repeat(2000)}`,
+  }));
+  sources.push(
+    {
+      id: 'new-mail',
+      kind: 'mailIndex',
+      date: '2026-10-16',
+      text: 'Convite enviado para 22/10 às 14h.',
+    },
+    {
+      id: 'new-note',
+      kind: 'notes',
+      date: '2026-10-17',
+      text: 'Diagnóstico atualizado: 24 anúncios.',
+    },
+  );
+  const result = selectContext(sources, 'reunião proposta orçamento', 10000, 5);
+  assert.ok(result.sources.some((s) => s.id === 'new-mail'));
+  assert.ok(result.sources.some((s) => s.id === 'new-note'));
+  assert.ok(result.manifest.characters <= 10000);
+});
+
+test('provider overload is retryable and never reported as a credential or model configuration error', async () => {
+  await assert.rejects(
+    () =>
+      generateAnswer({
+        sources: [source],
+        snapshot: { gaps: [] },
+        mode: 'overview',
+        env: { GEMINI_MODEL: 'gemini-test', GEMINI_API_KEY: 'synthetic' },
+        fetcher: async () => ({ ok: false, status: 503 }),
+      }),
+    (error) =>
+      error.code === 'model_unavailable' && error.status === 503 && error.retryAfter === 15,
+  );
+});
+
+test('a server configured alternate recovers overload within one deadline and records the actual model', async () => {
+  const calls = [];
+  const result = await generateAnswer({
+    sources: [source],
+    snapshot: { gaps: [] },
+    mode: 'overview',
+    env: {
+      GEMINI_MODEL: 'gemini-3-primary',
+      GEMINI_FALLBACK_MODEL: 'gemini-3-alternate',
+      GEMINI_API_KEY: 'synthetic',
+    },
+    fetcher: async (url, options) => {
+      calls.push({ url, signal: options.signal });
+      if (calls.length === 1) return { ok: false, status: 503 };
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          candidates: [
+            { finishReason: 'STOP', content: { parts: [{ text: JSON.stringify(answer) }] } },
+          ],
+        }),
+      };
+    },
+  });
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].signal, calls[1].signal);
+  assert.equal(result.model, 'gemini-3-alternate');
+  assert.deepEqual(result.answer, answer);
+});

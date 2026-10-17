@@ -64,6 +64,7 @@ export function buildSources(pages) {
           part: start / partSize,
           date:
             record.message_time ||
+            record.data?.message_time ||
             record.marked_as_done_time ||
             record.due_date ||
             record.add_time ||
@@ -101,7 +102,7 @@ export function snapshotMetrics(pages, referenceAt) {
   }
   return calculateHardMetrics(deal, items, Date.parse(referenceAt));
 }
-export function selectContext(sources, question, maximum = 100000) {
+export function selectContext(sources, question, maximum = 100000, recentPerKind = 0) {
   const terms = normalizeText(question)
     .toLocaleLowerCase('pt-BR')
     .split(/[^\p{L}\p{N}]+/u)
@@ -152,6 +153,14 @@ export function selectContext(sources, question, maximum = 100000) {
     const first = ranked.find((entry) => entry.source.kind === kind);
     if (first) add(first.source);
   }
+  // Broad analyses need the latest primary records as well as lexical matches.
+  // Otherwise an older, verbose internal summary can crowd out a new reply.
+  const recent = [...candidates].sort(
+    (a, b) => (parsePipedriveDate(b.date) || 0) - (parsePipedriveDate(a.date) || 0),
+  );
+  for (const kind of ['mailIndex', 'notes', 'activities'])
+    for (const source of recent.filter((source) => source.kind === kind).slice(0, recentPerKind))
+      add(source);
   for (const entry of ranked) add(entry.source);
   return {
     sources: selected,
@@ -160,7 +169,7 @@ export function selectContext(sources, question, maximum = 100000) {
       selectedChunks: selected.length,
       omittedChunks: sources.length - selected.length,
       characters: used,
-      selection: 'complete-core-fields-relevance-and-recency-v2',
+      selection: 'complete-core-fields-recent-primary-and-relevance-v3',
       sourceIds: selected.map((s) => s.id),
     },
   };
