@@ -28,3 +28,10 @@ dist-ssr
 # Debug/test scripts
 debug_*.js
 test_*.js
+
+# Local credentials, browser test output
+.env.*
+!.env.example
+playwright-report/
+test-results/
+supabase/.temp/

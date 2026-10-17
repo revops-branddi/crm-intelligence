@@ -1,22 +1,19 @@
 /** @type {import('tailwindcss').Config} */
 export default {
-  content: [
-    "./index.html",
-    "./src/**/*.{js,ts,jsx,tsx}",
-  ],
+  content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
   theme: {
     extend: {
       colors: {
         branddi: {
           cyan: '#0ACFDE',
           navy: '#001D2E',
-        }
+        },
       },
       fontFamily: {
         sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'sans-serif'],
       },
       animation: {
-        'in': 'fadeIn 0.3s ease-out',
+        in: 'fadeIn 0.3s ease-out',
       },
       keyframes: {
         fadeIn: {
@@ -27,4 +24,4 @@ export default {
     },
   },
   plugins: [],
-}
+};

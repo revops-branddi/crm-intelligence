@@ -1,586 +1,705 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import {
+  Zap,
+  Database,
+  FileText,
+  MessageSquare,
+  Search,
+  RefreshCw,
+  Loader2,
+  LogOut,
+} from 'lucide-react';
 import { supabase } from './lib/supabase';
-
-// Layout
-import { Sidebar } from './components/layout/Sidebar';
-import { TopBar } from './components/layout/TopBar';
-
-// UI
+import { useAuth } from './hooks/useAuth';
+import { apiRequest } from './services/api';
 import { LoginScreen } from './components/ui/LoginScreen';
-import { Toast } from './components/ui/Toast';
-import { ProcessingStepper } from './components/ui/ProcessingStepper';
-import { EmptyState } from './components/ui/EmptyState';
+import { AnswerPanel } from './components/AnswerPanel';
+import { EvidencePanel } from './components/EvidencePanel';
+const date = (value) =>
+  value
+    ? new Date(value).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
+    : 'Ainda não concluída';
+const statusLabel = {
+  collecting: 'Em coleta',
+  complete: 'Coleta concluída',
+  partial: 'Coleta com lacunas',
+  cancelled: 'Cancelada',
+};
+const tabs = [
+  ['overview', 'Visão geral', Database],
+  ['prospecting', 'Prospecção', Search],
+  ['briefing', 'Pré-reunião', FileText],
+  ['question', 'Perguntas', MessageSquare],
+  ['sources', 'Dados e fontes', Database],
+];
+function delay(ms, signal) {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) return reject(new DOMException('Paused', 'AbortError'));
+    const stop = () => {
+      clearTimeout(timer);
+      reject(new DOMException('Paused', 'AbortError'));
+    };
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', stop);
+      resolve();
+    }, ms);
+    signal.addEventListener('abort', stop, { once: true });
+  });
+}
 
-// Tabs
-import { ConfigTab } from './components/tabs/ConfigTab';
-import { DashboardTab } from './components/tabs/DashboardTab';
-import { StrategyTab } from './components/tabs/StrategyTab';
-import { TimelineTab } from './components/tabs/TimelineTab';
-import { ParticipantsTab } from './components/tabs/ParticipantsTab';
-import { CompanyTab } from './components/tabs/CompanyTab';
-import { SavedDealsTab } from './components/tabs/SavedDealsTab';
-
-// Services
-import { calculateHardMetrics, parsePipedriveDate } from './services/metrics';
-import { companyProfileToPrompt, fetchCompanyProfile, normalizeCompanyAnalysis } from './services/company-profile';
-import { buildCommercialHistory } from './services/commercial-history';
-
-const App = () => {
-  // ─── Auth ───
-  const [user, setUser] = useState(null);
-  const [authLoading, setAuthLoading] = useState(true);
-
-  // ─── Config ───
-  const [model, setModel] = useState(() => localStorage.getItem('geminiModel') || "gemini-2.5-flash");
-  const [pipedriveToken, setPipedriveToken] = useState(() => localStorage.getItem('pipedriveToken') || "");
-  const [dealId, setDealId] = useState("");
-  const [dealTitle, setDealTitle] = useState("");
-  const [lastUpdate, setLastUpdate] = useState(null);
-
-  // ─── Analysis State ───
-  const [status, setStatus] = useState("idle");
-  const [errorMsg, setErrorMsg] = useState("");
-  const [analysis, setAnalysis] = useState(null);
-  const [hardMetrics, setHardMetrics] = useState(null);
-  const [rawExtractedData, setRawExtractedData] = useState("");
-  const [detailedParticipants, setDetailedParticipants] = useState([]);
-  const [processingStep, setProcessingStep] = useState(0);
-
-  // ─── UI State ───
-  const [activeTab, setActiveTab] = useState("config");
-  const [toast, setToast] = useState(null);
-
-  // ─── Saved Deals ───
-  const [savedDeals, setSavedDeals] = useState([]);
-  const [loadingDeals, setLoadingDeals] = useState(false);
-  const [dealsError, setDealsError] = useState("");
-
-  const [, setFlowItems] = useState([]);
-  const [, setUsersMap] = useState({});
-
-  const normalizeAnalysis = (value) => value?.perfilEmpresa
-    ? { ...value, perfilEmpresa: normalizeCompanyAnalysis(value.perfilEmpresa) }
-    : value;
-
-  // ═══════════════════════════════════════════════
-  //  AUTH
-  // ═══════════════════════════════════════════════
+function Workspace({ user, logout }) {
+  const [configuration, setConfiguration] = useState(null),
+    [token, setToken] = useState(''),
+    [dealId, setDealId] = useState('');
+  const [snapshot, setSnapshot] = useState(null),
+    [saved, setSaved] = useState([]),
+    [listOffset, setListOffset] = useState(0),
+    [hasMore, setHasMore] = useState(false);
+  const [answers, setAnswers] = useState([]),
+    [selectedAnswer, setSelectedAnswer] = useState(null),
+    [question, setQuestion] = useState(''),
+    [tab, setTab] = useState('overview');
+  const [busy, setBusy] = useState(''),
+    [error, setError] = useState(''),
+    [notice, setNotice] = useState(''),
+    [sourceData, setSourceData] = useState(null),
+    [openedSource, setOpenedSource] = useState(null);
+  const controller = useRef(null),
+    mounted = useRef(true);
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-      setAuthLoading(false);
-    });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-    });
-    return () => subscription.unsubscribe();
-  }, []);
-
-  const handleGoogleLogin = async () => {
-    try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: { redirectTo: window.location.origin }
+    mounted.current = true;
+    let active = true;
+    apiRequest('status')
+      .then((result) => {
+        if (active) setConfiguration(result);
+      })
+      .catch((error) => {
+        if (active) setError(error.message);
       });
-      if (error) throw error;
-    } catch {
-      showToast("Erro ao fazer login. Verifique as credenciais do Supabase.");
+    return () => {
+      active = false;
+      mounted.current = false;
+      controller.current?.abort();
+    };
+  }, []);
+  async function configure(event) {
+    event.preventDefault();
+    setBusy('connection');
+    setError('');
+    try {
+      await apiRequest('connect', { token });
+      setToken('');
+      setConfiguration(await apiRequest('status'));
+      setNotice('Pipedrive conectado. Credencial armazenada somente no servidor.');
+    } catch (error) {
+      setError(error.message);
+    } finally {
+      setBusy('');
     }
-  };
-
-  const handleLogout = async () => { await supabase.auth.signOut(); };
-
-  // ═══════════════════════════════════════════════
-  //  PERSIST CONFIG
-  // ═══════════════════════════════════════════════
-  useEffect(() => {
-    localStorage.setItem('geminiModel', model);
-    localStorage.setItem('pipedriveToken', pipedriveToken);
-  }, [model, pipedriveToken]);
-
-  // ═══════════════════════════════════════════════
-  //  TOAST & CLIPBOARD
-  // ═══════════════════════════════════════════════
-  const showToast = (message) => {
-    setToast(message);
-    setTimeout(() => setToast(null), 3000);
-  };
-
-  const copyToClipboard = async (text) => {
+  }
+  async function disconnect() {
+    setBusy('connection');
+    setError('');
+    try {
+      await apiRequest('disconnect');
+      setConfiguration(await apiRequest('status'));
+      setSnapshot(null);
+      setAnswers([]);
+      setSaved([]);
+      setSourceData(null);
+      setOpenedSource(null);
+    } catch (error) {
+      setError(error.message);
+    } finally {
+      setBusy('');
+    }
+  }
+  async function list(offset = 0) {
+    setBusy('list');
+    setError('');
+    try {
+      const result = await apiRequest('list', { offset });
+      setSaved(result.snapshots);
+      setHasMore(result.hasMore);
+      setListOffset(offset);
+    } catch (error) {
+      setError(error.message);
+    } finally {
+      setBusy('');
+    }
+  }
+  async function load(id) {
+    setBusy('load');
+    setError('');
+    try {
+      const result = await apiRequest('get', { snapshotId: id });
+      const history = await apiRequest('answers', { snapshotId: id });
+      setSnapshot(result.snapshot);
+      setAnswers(history.answers);
+      setSelectedAnswer(null);
+      setSourceData(null);
+      setOpenedSource(null);
+      setTab('overview');
+      setDealId(result.snapshot.deal_id);
+      setNotice('Versão histórica carregada. Use “Nova extração” para atualizar os dados.');
+    } catch (error) {
+      setError(error.message);
+    } finally {
+      setBusy('');
+    }
+  }
+  async function collect(existing) {
+    setError('');
+    setNotice('');
+    setBusy('extracting');
+    controller.current = new AbortController();
+    const signal = controller.current.signal;
+    try {
+      let current =
+        existing || (await apiRequest('start', { dealId: dealId.trim() }, signal)).snapshot;
+      setSnapshot(current);
+      setAnswers([]);
+      setSelectedAnswer(null);
+      setSourceData(null);
+      setOpenedSource(null);
+      setTab('overview');
+      let retries = 0;
+      while (current.status === 'collecting') {
+        try {
+          current = (await apiRequest('step', { snapshotId: current.id }, signal)).snapshot;
+          if (!mounted.current) return;
+          setSnapshot(current);
+          retries = 0;
+        } catch (error) {
+          if (error.name === 'AbortError') throw error;
+          if ([409, 429, 502, 503, 504].includes(error.status) && retries++ < 3) {
+            await delay(Math.min(60, error.retryAfter || 2 ** retries) * 1000, signal);
+            continue;
+          }
+          throw error;
+        }
+      }
+      setNotice('Dados preservados. Escolha Prospecção, Pré-reunião ou faça uma pergunta.');
+    } catch (error) {
+      if (mounted.current) {
+        if (error.name === 'AbortError')
+          setNotice('Coleta pausada. Os registros já salvos serão reutilizados ao retomar.');
+        else setError(error.message);
+      }
+    } finally {
+      if (mounted.current) setBusy('');
+    }
+  }
+  async function analyze(mode) {
+    setBusy('analysis');
+    setError('');
+    controller.current = new AbortController();
+    try {
+      const result = await apiRequest(
+        'answer',
+        { snapshotId: snapshot.id, mode, question: mode === 'question' ? question : '' },
+        controller.current.signal,
+      );
+      if (mounted.current) {
+        setAnswers((previous) => [result.answer, ...previous]);
+        setSelectedAnswer(result.answer);
+        setTab(mode);
+      }
+    } catch (error) {
+      if (mounted.current)
+        setError(
+          error.name === 'AbortError'
+            ? 'Solicitação interrompida. Consulte as respostas salvas antes de gerar novamente.'
+            : error.message,
+        );
+    } finally {
+      if (mounted.current) setBusy('');
+    }
+  }
+  async function viewSources() {
+    setBusy('sources');
+    setError('');
+    try {
+      setSourceData(await apiRequest('sources', { snapshotId: snapshot.id }));
+      setTab('sources');
+    } catch (error) {
+      setError(error.message);
+    } finally {
+      setBusy('');
+    }
+  }
+  async function openSource(id) {
+    setError('');
+    try {
+      const result = await apiRequest('source', { snapshotId: snapshot.id, sourceId: id });
+      setOpenedSource(result.source);
+    } catch (error) {
+      setError(error.message);
+    }
+  }
+  async function copy(text) {
     try {
       await navigator.clipboard.writeText(text);
-      showToast("✅ Copiado com sucesso!");
+      setNotice('Copiado com fontes.');
     } catch {
-      const textArea = document.createElement("textarea");
-      textArea.value = text;
-      document.body.appendChild(textArea);
-      textArea.select();
-      try { document.execCommand('copy'); showToast("✅ Copiado com sucesso!"); } catch (err) { console.error('Erro ao copiar', err); }
-      document.body.removeChild(textArea);
+      setError('Não foi possível copiar. Selecione o texto manualmente.');
     }
-  };
-
-  // ═══════════════════════════════════════════════
-  //  SAVED DEALS
-  // ═══════════════════════════════════════════════
-  const fetchSavedDeals = async () => {
-    setLoadingDeals(true);
-    setDealsError("");
-    try {
-      const { data, error } = await supabase
-        .from('deal_analyses')
-        .select('*')
-        .order('atualizado_em', { ascending: false });
-      if (error) throw error;
-      setSavedDeals(data || []);
-    } catch (err) {
-      setDealsError("Erro ao buscar deals salvos: " + (err.message || err));
-    }
-    setLoadingDeals(false);
-  };
-
-  useEffect(() => {
-    if (activeTab === 'deals') fetchSavedDeals();
-  }, [activeTab]);
-
-  const handleLoadDeal = (deal) => {
-    setDealId(deal.deal_id);
-    setDealTitle(deal.deal_title);
-    setAnalysis(normalizeAnalysis(deal.analise_ia));
-    setHardMetrics(deal.metricas);
-    setRawExtractedData(deal.dados_brutos || '');
-    setFlowItems(deal.flow_items || []);
-    setUsersMap(deal.users_map || {});
-    setActiveTab('dashboard');
-  };
-
-  // ═══════════════════════════════════════════════
-  //  PIPEDRIVE FETCH + GEMINI ANALYSIS
-  // ═══════════════════════════════════════════════
-  const fetchPipedriveData = async (forceRefresh = false) => {
-    try {
-      setStatus("fetching");
-      setErrorMsg("");
-      setProcessingStep(1);
-
-      // Cache check
-      if (!forceRefresh) {
-        const { data: cacheData, error: cacheError } = await supabase
-          .from('deal_analyses')
-          .select('*')
-          .eq('deal_id', String(dealId))
-          .maybeSingle();
-
-        if (cacheData && !cacheError) {
-          setRawExtractedData(cacheData.dados_brutos);
-          setAnalysis(normalizeAnalysis(cacheData.analise_ia));
-          setHardMetrics(cacheData.metricas);
-
-          try {
-            const dealRes = await fetch(`/api/pipedrive/deals/${dealId}?api_token=${pipedriveToken}`, { method: 'GET', headers: { 'Accept': 'application/json' } });
-            if (dealRes.ok) {
-              const d = await dealRes.json();
-              if (d.data?.title) {
-                setDealTitle(d.data.title);
-                if (cacheData.deal_title !== d.data.title) {
-                  await supabase.from('deal_analyses').update({ deal_title: d.data.title }).eq('deal_id', String(dealId));
-                }
-              }
-            }
-          } catch { setDealTitle(cacheData.deal_title || ''); }
-
-          const dt = new Date(cacheData.atualizado_em);
-          setLastUpdate(`${dt.toLocaleDateString('pt-BR')} às ${dt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`);
-          setStatus("idle");
-          setActiveTab('dashboard');
-          showToast("⚡ Análise carregada do cache!");
-          return null;
-        }
-      }
-
-      // Fetch fresh data
-      setProcessingStep(2);
-
-      const dealRes = await fetch(`/api/pipedrive/deals/${dealId}?api_token=${pipedriveToken}`, { method: 'GET', headers: { 'Accept': 'application/json' } });
-      if (!dealRes.ok) {
-        const errorText = await dealRes.text();
-        throw new Error(`Erro na API (${dealRes.status}): ${dealRes.status === 401 ? "Token inválido" : "Negócio não encontrado"}. Detalhes: ${errorText.substring(0, 50)}`);
-      }
-
-      const participantsRes = await fetch(`/api/pipedrive/deals/${dealId}/participants?api_token=${pipedriveToken}`, { method: 'GET', headers: { 'Accept': 'application/json' } });
-      let usersMap = {};
-      try {
-        const usersRes = await fetch(`/api/pipedrive/users?api_token=${pipedriveToken}`, { method: 'GET', headers: { 'Accept': 'application/json' } });
-        if (usersRes.ok) {
-          const usersData = await usersRes.json();
-          if (usersData.data) usersData.data.forEach(u => { usersMap[u.id] = u.name; });
-        }
-      } catch (e) { console.warn('Could not fetch users:', e); }
-
-      const dealData = await dealRes.json();
-      let participantsData = participantsRes.ok ? await participantsRes.json() : { success: false, data: [] };
-      const orgId = typeof dealData.data?.org_id === 'object' ? dealData.data.org_id?.value : dealData.data?.org_id;
-      const companyProfile = await fetchCompanyProfile(orgId, pipedriveToken);
-
-      // Enrich participants
-      if (participantsData.data && participantsData.data.length > 0) {
-        participantsData.data = participantsData.data.map(p => {
-          const person = p.person || {};
-          return {
-            ...p,
-            name: person.name || p.person_id?.name || p.name,
-            email: person.email || p.person_id?.email || p.email,
-            phone: person.phone || p.person_id?.phone || p.phone,
-            org_name: person.org_name || person.org_id?.name || '',
-            job_title: person.job_title || person['8a759b92f4243c926cfeda450011949ac51a7a95'] || '',
-            linkedin: person['6bc768aa12d302afae99f70f8349fcfe714ca394'] || '',
-            whatsapp: person['8639d6c9321e6de529429d20021623aad637cc1a'] || '',
-            label: person.label || p.label,
-            tags: person.label || '',
-          };
-        });
-      }
-      if (!dealData.success) throw new Error("A API do Pipedrive retornou sucesso=false para este Deal.");
-
-      // Fetch flow items
-      let allFlowItems = [];
-      let start = 0;
-      let moreItems = true;
-      let pageCount = 0;
-      setProcessingStep(3);
-      while (moreItems && pageCount < 3) {
-        const flowRes = await fetch(`/api/pipedrive/deals/${dealId}/flow?api_token=${pipedriveToken}&limit=100&start=${start}`, { method: 'GET', headers: { 'Accept': 'application/json' } });
-        if (!flowRes.ok) throw new Error("Erro ao buscar histórico.");
-        const flowData = await flowRes.json();
-        if (flowData.data) allFlowItems = allFlowItems.concat(flowData.data);
-        if (flowData.additional_data?.pagination?.more_items_in_collection) {
-          start = flowData.additional_data.pagination.next_start;
-          pageCount++;
-        } else { moreItems = false; }
-      }
-
-      const metrics = calculateHardMetrics(dealData, allFlowItems);
-      const commercialHistory = buildCommercialHistory(dealData, participantsData.data, allFlowItems, usersMap, { historyTruncated: moreItems });
-      setHardMetrics(metrics);
-      setProcessingStep(4);
-
-      // Compile history for AI
-      const dataAtual = new Date().toLocaleDateString('pt-BR', { year: 'numeric', month: 'long', day: 'numeric' });
-      let compiledHistory = `--- DATA DE REFERÊNCIA (HOJE) ---\n${dataAtual}\n\n`;
-      compiledHistory += `--- DADOS DO NEGÓCIO E MÉTRICAS EXATAS ---\nID do Negócio: ${dealId}\nTítulo: ${dealData.data.title}\nDias no Funil (Aberto há): ${metrics.daysOpen} dias\nDias sem Contato (Email/WhatsApp/LinkedIn/Call): ${metrics.daysInactive} dias\nTotal de Interações Registradas: ${metrics.totalActions}\n\n`;
-      compiledHistory += `--- DADOS DA EMPRESA NO CRM ---\n${companyProfileToPrompt(companyProfile)}\n\n`;
-
-      compiledHistory += `\n--- PARTICIPANTES VINCULADOS ---\n`;
-      if (participantsData.data && participantsData.data.length > 0) {
-        participantsData.data.forEach(p => {
-          const emails = Array.isArray(p.email) ? p.email.map(e => e.value || e).join(', ') : (p.email || '');
-          compiledHistory += `- Nome: ${p.name || p.person_id?.name} | Email: ${emails}\n`;
-        });
-      }
-
-      // SDR attribution
-      const sdrCounts = {};
-      allFlowItems.forEach(item => {
-        const userId = item.data?.user_id || item.data?.creator_user_id || item.user_id;
-        if (userId && usersMap[userId]) {
-          if (!sdrCounts[usersMap[userId]]) sdrCounts[usersMap[userId]] = 0;
-          sdrCounts[usersMap[userId]]++;
-        }
-      });
-      const sdrNames = Object.keys(sdrCounts);
-      if (sdrNames.length > 0) {
-        compiledHistory += `\n--- SDRs QUE TOCARAM ESTE DEAL ---\n`;
-        sdrNames.forEach(name => { compiledHistory += `- ${name} (${sdrCounts[name]} interações)\n`; });
-      }
-
-      compiledHistory += `\n--- HISTÓRICO DE ATIVIDADES ---\n`;
-      allFlowItems.forEach(item => {
-        let dateStr = "Data desconhecida";
-        const rawDate = item.data?.add_time || item.timestamp || item.add_time;
-        try { if (rawDate) dateStr = new Date(parsePipedriveDate(rawDate)).toLocaleDateString('pt-PT'); } catch { /* mantém fallback */ }
-
-        const userId = item.data?.user_id || item.data?.creator_user_id || item.user_id;
-        const sdrTag = userId && usersMap[userId] ? `[SDR: ${usersMap[userId]}] ` : '';
-
-        if (item.object === 'note') {
-          const cleanNote = typeof item.data?.content === 'string' ? item.data.content.replace(/<[^>]*>?/gm, '') : '';
-          compiledHistory += `[${dateStr}] ${sdrTag}NOTA: ${cleanNote}\n`;
-        } else if (item.object === 'activity') {
-          compiledHistory += `[${dateStr}] ${sdrTag}ATIVIDADE | Tipo: [${item.data?.type}] | Assunto: [${item.data?.subject}] | Estado: ${item.data?.done ? 'Concluída' : 'Pendente'}\n`;
-          if (typeof item.data?.note === 'string') {
-            compiledHistory += `   Detalhes: ${item.data.note.replace(/<[^>]*>?/gm, '')}\n`;
-          }
-        } else if (item.object === 'mailThread' || item.object === 'mailMessage') {
-          compiledHistory += `[${dateStr}] ${sdrTag}E-MAIL: Assunto: ${item.data?.subject}\n`;
-          if (item.data?.snippet) compiledHistory += `   Resumo: ${item.data.snippet}\n`;
-        }
-      });
-
-      setRawExtractedData(compiledHistory);
-      setDealTitle(dealData.data.title);
-      return { compiledHistory, metrics, commercialHistory, participants: participantsData.data, title: dealData.data.title, items: allFlowItems, usersMap };
-
-    } catch (err) {
-      setStatus("error");
-      setErrorMsg(err.message || "Erro desconhecido ao ligar ao Pipedrive.");
-      return null;
-    }
-  };
-
-  const analyzeWithGemini = async (historyText, metricsObj, titleOverride, commercialHistory) => {
-    try {
-      setStatus("analyzing");
-      setProcessingStep(5);
-
-      const response = await fetch(`/api/gemini`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ historyText, model })
-      });
-
-      if (!response.ok) {
-        let errMsg = "Erro desconhecido na API Vercel";
-        try {
-          const errorData = await response.json();
-          errMsg = errorData.error || errMsg;
-        } catch {
-          if (response.status === 504) errMsg = "Tempo Esgotado (504): A análise deste negócio é muito complexa ou o histórico é muito longo. Tente novamente em instantes.";
-          else errMsg = `Erro no Servidor (${response.status}): O servidor falhou ao processar a resposta.`;
-        }
-        throw new Error(errMsg);
-      }
-
-      const result = await response.json();
-      let rawText = result.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
-      const parsedData = JSON.parse(rawText.trim());
-
-      if (parsedData.resumo || parsedData.nota || parsedData.exemplos || parsedData.pontosMelhoria) {
-        parsedData.avaliacaoProspecao = {
-          resumo: parsedData.resumo,
-          nota: parsedData.nota,
-          exemplos: parsedData.exemplos,
-          pontosMelhoria: parsedData.pontosMelhoria
-        };
-      }
-
-      parsedData.perfilEmpresa = normalizeCompanyAnalysis(parsedData.perfilEmpresa);
-      parsedData.historicoComercial = commercialHistory;
-      setAnalysis(parsedData);
-
-      const nowString = new Date().toISOString();
-      const dt = new Date(nowString);
-      setLastUpdate(`${dt.toLocaleDateString('pt-BR')} às ${dt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`);
-
-      // Save to Supabase cache
-      setProcessingStep(6);
-      try {
-        const { error: upsertError } = await supabase
-          .from('deal_analyses')
-          .upsert({
-            deal_id: String(dealId),
-            deal_title: titleOverride || dealTitle,
-            analise_ia: parsedData,
-            dados_brutos: historyText,
-            metricas: metricsObj,
-            atualizado_em: nowString
-          }, { onConflict: 'deal_id' });
-
-        if (upsertError) console.error("❌ Erro ao salvar no Supabase:", upsertError.code, upsertError.message);
-        else showToast("✅ Análise salva no banco!");
-      } catch (dbErr) { console.error("🚨 Exceção ao conectar com Supabase:", dbErr); }
-
-      setActiveTab("dashboard");
-      setStatus("success");
-      setProcessingStep(0);
-
-    } catch (err) {
-      setStatus("error");
-      setProcessingStep(0);
-      setErrorMsg(err.message || "Falha na análise da IA.");
-    }
-  };
-
-  // ═══════════════════════════════════════════════
-  //  ORCHESTRATORS
-  // ═══════════════════════════════════════════════
-  const handleStartProcess = async () => {
-    if (!pipedriveToken || !dealId) {
-      setActiveTab("config");
-      showToast("Preencha as configurações do Pipedrive primeiro!");
-      return;
-    }
-    setAnalysis(null);
-    setHardMetrics(null);
-    setErrorMsg("");
-    setRawExtractedData("");
-    setDealTitle("");
-    setProcessingStep(1);
-    setActiveTab("dashboard");
-
-    const fetchRes = await fetchPipedriveData();
-    if (fetchRes) {
-      if (fetchRes.participants) setDetailedParticipants(fetchRes.participants);
-      if (fetchRes.items) setFlowItems(fetchRes.items);
-      if (fetchRes.usersMap) setUsersMap(fetchRes.usersMap);
-      await analyzeWithGemini(fetchRes.compiledHistory, fetchRes.metrics, fetchRes.title, fetchRes.commercialHistory);
-    } else { setProcessingStep(0); }
-  };
-
-  const handleForceRefresh = async () => {
-    setAnalysis(null);
-    setHardMetrics(null);
-    setErrorMsg("");
-    setRawExtractedData("");
-    setProcessingStep(1);
-    setActiveTab("dashboard");
-
-    const fetchRes = await fetchPipedriveData(true);
-    if (fetchRes) {
-      if (fetchRes.participants) setDetailedParticipants(fetchRes.participants);
-      if (fetchRes.items) setFlowItems(fetchRes.items);
-      if (fetchRes.usersMap) setUsersMap(fetchRes.usersMap);
-      await analyzeWithGemini(fetchRes.compiledHistory, fetchRes.metrics, fetchRes.title, fetchRes.commercialHistory);
-    }
-  };
-
-  const handleNewAnalysis = () => {
-    setAnalysis(null);
-    setHardMetrics(null);
-    setRawExtractedData("");
-    setDealTitle("");
-    setDealId("");
-    setStatus("idle");
-    setErrorMsg("");
-    setProcessingStep(0);
-    setActiveTab("config");
-  };
-
-  // ═══════════════════════════════════════════════
-  //  RENDER
-  // ═══════════════════════════════════════════════
-  if (authLoading) {
-    return (
-      <div className="h-screen w-screen flex items-center justify-center">
-        <div className="animate-pulse text-slate-400 font-bold">Carregando...</div>
-      </div>
-    );
   }
-
-  if (!user) {
-    return <LoginScreen onLogin={handleGoogleLogin} />;
-  }
-
+  const ready = snapshot && ['complete', 'partial'].includes(snapshot.status);
+  const currentAnswer =
+    selectedAnswer?.mode === tab ? selectedAnswer : answers.find((answer) => answer.mode === tab);
   return (
-    <div className="flex h-screen bg-slate-50 overflow-hidden">
-      <Sidebar
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
-        analysis={analysis}
-        user={user}
-        onLogout={handleLogout}
-      />
-
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <TopBar
-          analysis={analysis}
-          onNewAnalysis={handleNewAnalysis}
-          onForceRefresh={handleForceRefresh}
-          isProcessing={status === 'fetching' || status === 'analyzing'}
-          onCopyInsight={copyToClipboard}
-        />
-
-        <main className="flex-1 overflow-y-auto p-8">
-          {/* PROCESSING STEPPER */}
-          {(status === 'fetching' || status === 'analyzing') && processingStep > 0 && (
-            <ProcessingStepper dealId={dealId} processingStep={processingStep} />
-          )}
-
-          {/* CONFIG TAB */}
-          {activeTab === 'config' && (
-            <ConfigTab
-              pipedriveToken={pipedriveToken}
-              setPipedriveToken={setPipedriveToken}
-              dealId={dealId}
-              setDealId={setDealId}
-              model={model}
-              setModel={setModel}
-              status={status}
-              errorMsg={errorMsg}
-              onStartProcess={handleStartProcess}
-            />
-          )}
-
-          {/* SAVED DEALS TAB */}
-          {activeTab === 'deals' && (
-            <SavedDealsTab
-              savedDeals={savedDeals}
-              loadingDeals={loadingDeals}
-              dealsError={dealsError}
-              onRefresh={fetchSavedDeals}
-              onLoadDeal={handleLoadDeal}
-            />
-          )}
-
-          {/* ANALYSIS TABS – only when dashboard+ selected and analysis exists */}
-          {activeTab !== 'config' && activeTab !== 'deals' && (
-            analysis ? (
-              <div className="max-w-6xl mx-auto">
-                {activeTab === 'dashboard' && (
-                  <DashboardTab
-                    analysis={analysis}
-                    hardMetrics={hardMetrics}
-                    dealTitle={dealTitle}
-                    dealId={dealId}
-                    lastUpdate={lastUpdate}
-                    rawExtractedData={rawExtractedData}
-                    status={status}
-                    onCopyText={copyToClipboard}
-                    onForceRefresh={handleForceRefresh}
-                  />
-                )}
-
-                {activeTab === 'estrategia' && (
-                  <StrategyTab
-                    analysis={analysis} 
-                    onCopyText={copyToClipboard}
-                  />
-                )}
-
-                {activeTab === 'empresa' && (
-                  <CompanyTab analysis={analysis} onCopyText={copyToClipboard} />
-                )}
-
-                {activeTab === 'participantes' && (
-                  <ParticipantsTab
-                    analysis={analysis}
-                    detailedParticipants={detailedParticipants}
-                  />
-                )}
-
-                {activeTab === 'timeline' && (
-                  <TimelineTab
-                    analysis={analysis}
-                  />
-                )}
-
+    <div className="min-h-screen bg-slate-50 text-slate-800">
+      <header className="bg-branddi-navy text-white px-5 py-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex gap-3 items-center">
+          <Zap className="text-branddi-cyan" />
+          <div>
+            <h1 className="font-bold">CRM Intelligence</h1>
+            <p className="text-xs text-slate-300">Branddi · Prospecção e preparação de reuniões</p>
+          </div>
+        </div>
+        <div className="flex gap-4 items-center text-xs">
+          <span>{user.email}</span>
+          <button
+            onClick={() => {
+              controller.current?.abort();
+              void logout();
+            }}
+            className="flex gap-1 items-center"
+          >
+            <LogOut size={14} />
+            Sair
+          </button>
+        </div>
+      </header>
+      <main className="max-w-6xl mx-auto p-4 md:p-8 space-y-5">
+        {error && (
+          <div
+            role="alert"
+            className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800 flex justify-between gap-3"
+          >
+            {error}
+            <button onClick={() => setError('')} aria-label="Fechar erro">
+              ×
+            </button>
+          </div>
+        )}
+        {notice && (
+          <div
+            role="status"
+            className="rounded-xl border border-cyan-200 bg-cyan-50 p-4 text-sm text-branddi-navy flex justify-between gap-3"
+          >
+            {notice}
+            <button onClick={() => setNotice('')} aria-label="Fechar aviso">
+              ×
+            </button>
+          </div>
+        )}
+        {!configuration && !error && <p>Verificando conexão…</p>}
+        {configuration && !configuration.connection && (
+          <section className="card p-6 max-w-xl">
+            <h2 className="text-lg font-bold">Conectar ao Pipedrive</h2>
+            <p className="text-sm text-slate-500 mt-2">
+              Use o token da sua conta. As consultas respeitam a visibilidade dos negócios nessa
+              conta. O token será criptografado no servidor.
+            </p>
+            <form onSubmit={configure} className="mt-4 space-y-3">
+              <label htmlFor="pipedrive-token" className="block text-sm font-semibold">
+                Token Pipedrive
+              </label>
+              <input
+                id="pipedrive-token"
+                type="password"
+                autoComplete="off"
+                className="input w-full"
+                value={token}
+                onChange={(event) => setToken(event.target.value)}
+                required
+                minLength={20}
+              />
+              <button disabled={!!busy} className="primary">
+                Conectar
+              </button>
+            </form>
+          </section>
+        )}
+        {configuration?.connection && (
+          <>
+            <section className="card p-5">
+              <div className="flex justify-between gap-3 items-center mb-4">
+                <p className="text-xs text-emerald-700 font-semibold">
+                  Pipedrive conectado · conta {configuration.connection.company_id}
+                </p>
+                <button
+                  disabled={!!busy}
+                  onClick={disconnect}
+                  className="text-xs text-slate-500 underline"
+                >
+                  Desconectar
+                </button>
               </div>
-            ) : (
-              /* EMPTY STATE when no analysis loaded */
-              !(status === 'fetching' || status === 'analyzing') && (
-                <EmptyState
-                  onGoConfig={() => setActiveTab('config')}
-                  onGoDeals={() => setActiveTab('deals')}
-                />
-              )
-            )
-          )}
-        </main>
-      </div>
-
-      {/* TOAST NOTIFICATION */}
-      {toast && <Toast message={toast} onClose={() => setToast(null)} />}
+              <form
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void collect();
+                }}
+                className="flex flex-wrap gap-3 items-end"
+              >
+                <div className="flex-1 min-w-48">
+                  <label htmlFor="deal-id" className="block text-sm font-semibold mb-1">
+                    ID do negócio
+                  </label>
+                  <input
+                    id="deal-id"
+                    className="input w-full"
+                    inputMode="numeric"
+                    pattern="[1-9][0-9]*"
+                    value={dealId}
+                    onChange={(event) => setDealId(event.target.value)}
+                    placeholder="Ex.: 10298"
+                    required
+                    disabled={!!busy}
+                  />
+                </div>
+                <button className="primary" disabled={!!busy}>
+                  <RefreshCw size={15} />
+                  Nova extração
+                </button>
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={!!busy}
+                  onClick={() => list()}
+                >
+                  Extrações salvas
+                </button>
+              </form>
+              <p className="text-xs text-slate-500 mt-3">
+                Cada extração cria uma nova versão. O histórico original permanece preservado.
+              </p>
+            </section>
+            {(saved.length > 0 || hasMore || listOffset > 0) && (
+              <section className="card p-4">
+                <h2 className="font-bold mb-3">Versões salvas</h2>
+                <div className="space-y-2">
+                  {saved.map((row) => (
+                    <button
+                      disabled={!!busy}
+                      onClick={() => load(row.id)}
+                      key={row.id}
+                      className="w-full text-left p-3 rounded-lg bg-slate-50 hover:bg-cyan-50 flex flex-wrap justify-between gap-2"
+                    >
+                      <span className="text-sm font-semibold">
+                        #{row.deal_id} · {row.title}
+                      </span>
+                      <span className="text-xs text-slate-500">
+                        {date(row.started_at)} · {statusLabel[row.status]}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+                <div className="flex justify-between mt-3">
+                  <button
+                    className="secondary"
+                    disabled={!!busy || !listOffset}
+                    onClick={() => list(Math.max(0, listOffset - 20))}
+                  >
+                    Anterior
+                  </button>
+                  <button
+                    className="secondary"
+                    disabled={!!busy || !hasMore}
+                    onClick={() => list(listOffset + 20)}
+                  >
+                    Próxima
+                  </button>
+                </div>
+              </section>
+            )}
+            {snapshot && (
+              <>
+                <section className="card p-5">
+                  <div className="flex flex-wrap gap-3 justify-between">
+                    <div>
+                      <h2 className="text-xl font-bold text-branddi-navy">{snapshot.title}</h2>
+                      <p className="text-xs text-slate-500 mt-1">
+                        Deal #{snapshot.deal_id} · {statusLabel[snapshot.status]}
+                      </p>
+                      <p className="text-xs text-slate-500 mt-1">
+                        Coleta iniciada: {date(snapshot.started_at)} · Finalizada:{' '}
+                        {date(snapshot.completed_at)}
+                      </p>
+                    </div>
+                    {snapshot.status === 'collecting' && (
+                      <button
+                        className="secondary"
+                        disabled={!!busy && busy !== 'extracting'}
+                        onClick={() =>
+                          busy === 'extracting' ? controller.current?.abort() : collect(snapshot)
+                        }
+                      >
+                        {busy === 'extracting' ? 'Pausar coleta' : 'Retomar coleta'}
+                      </button>
+                    )}
+                  </div>
+                  <p className="text-xs text-slate-500 mt-3">
+                    {snapshot.completed_tasks} etapas preservadas · {snapshot.remainingTasks}{' '}
+                    pendentes
+                    {snapshot.last_resource ? ` · Último recurso: ${snapshot.last_resource}` : ''}
+                  </p>
+                  {busy === 'extracting' && (
+                    <p className="flex gap-2 mt-3 text-sm text-branddi-navy" role="status">
+                      <Loader2 size={18} className="animate-spin" />
+                      Coletando e preservando os dados…
+                    </p>
+                  )}
+                  {!!snapshot.gaps?.length && (
+                    <details
+                      className="mt-4 rounded-lg bg-amber-50 border border-amber-200 p-3"
+                      open
+                    >
+                      <summary className="font-semibold text-sm text-amber-900">
+                        {snapshot.gaps.length} {snapshot.gaps.length === 1 ? 'lacuna' : 'lacunas'}{' '}
+                        na coleta ou leitura
+                      </summary>
+                      <ul className="list-disc pl-5 text-xs mt-2 space-y-2">
+                        {snapshot.gaps.map((gap, i) => (
+                          <li key={i}>
+                            {{
+                              attachment: 'Anexo',
+                              mail: 'E-mail',
+                              organization: 'Empresa',
+                              person: 'Pessoa',
+                              notes: 'Notas',
+                              activities: 'Atividades',
+                              flow: 'Histórico',
+                              deal: 'Negócio',
+                              files: 'Arquivos',
+                            }[gap.resource] || gap.resource}
+                            : {gap.message}
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                  )}
+                </section>
+                {ready && (
+                  <>
+                    <nav className="flex overflow-x-auto gap-2" aria-label="Visões do negócio">
+                      {tabs.map(([id, label, Icon]) => (
+                        <button
+                          disabled={!!busy}
+                          key={id}
+                          onClick={() =>
+                            id === 'sources' ? viewSources() : (setTab(id), setSelectedAnswer(null))
+                          }
+                          className={`flex whitespace-nowrap items-center gap-2 px-4 py-3 rounded-lg text-sm font-semibold ${tab === id ? 'bg-branddi-navy text-white' : 'bg-white border border-slate-200 text-slate-600'}`}
+                        >
+                          <Icon size={16} />
+                          {label}
+                        </button>
+                      ))}
+                    </nav>
+                    {tab === 'overview' && (
+                      <div className="space-y-5">
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                          {[
+                            ['Dias no ciclo', snapshot.metrics?.daysOpen],
+                            ['Dias desde contato registrado', snapshot.metrics?.daysInactive],
+                            ['Contatos registrados', snapshot.metrics?.totalActions],
+                            ['Atividades pendentes', snapshot.metrics?.pendingActivities],
+                          ].map(([label, value]) => (
+                            <div className="card p-4" key={label}>
+                              <p className="text-xs text-slate-500">{label}</p>
+                              <p className="text-2xl font-bold mt-2">{value ?? 'Sem evidência'}</p>
+                            </div>
+                          ))}
+                        </div>
+                        <p className="text-xs text-slate-500">
+                          {snapshot.metrics?.contactDefinition} Métricas calculadas em{' '}
+                          {date(snapshot.metrics?.referenceAt)}. Uma nova extração atualiza essa
+                          referência.
+                        </p>
+                        <section className="card p-6">
+                          <h2 className="font-bold">Preparar a próxima conversa</h2>
+                          <p className="text-sm text-slate-500 mt-2">
+                            Consulte as fontes, prepare a abordagem ou gere um briefing antes da
+                            reunião. As respostas mostram fatos, inferências, recomendações e
+                            lacunas separadamente.
+                          </p>
+                          <div className="flex flex-wrap gap-3 mt-4">
+                            <button
+                              disabled={!!busy || !configuration.analysisConfigured}
+                              className="primary"
+                              onClick={() => analyze('briefing')}
+                            >
+                              Gerar briefing
+                            </button>
+                            <button
+                              disabled={!!busy || !configuration.analysisConfigured}
+                              className="secondary"
+                              onClick={() => analyze('prospecting')}
+                            >
+                              Preparar prospecção
+                            </button>
+                          </div>
+                        </section>
+                      </div>
+                    )}
+                    {['briefing', 'prospecting', 'question'].includes(tab) && (
+                      <div className="space-y-5">
+                        <section className="card p-5">
+                          {tab === 'question' ? (
+                            <form
+                              onSubmit={(event) => {
+                                event.preventDefault();
+                                void analyze('question');
+                              }}
+                              className="space-y-3"
+                            >
+                              <label htmlFor="question" className="block font-semibold">
+                                O que você precisa saber sobre este negócio?
+                              </label>
+                              <textarea
+                                id="question"
+                                className="input w-full min-h-24"
+                                maxLength={2000}
+                                value={question}
+                                onChange={(event) => setQuestion(event.target.value)}
+                                placeholder="Qual foi o último compromisso assumido pelo cliente e onde isso está registrado?"
+                                required
+                              />
+                              <button
+                                className="primary"
+                                disabled={!!busy || !configuration.analysisConfigured}
+                              >
+                                Responder com fontes
+                              </button>
+                            </form>
+                          ) : (
+                            <div className="flex flex-wrap items-center justify-between gap-3">
+                              <h2 className="font-bold">
+                                {tab === 'briefing'
+                                  ? 'Preparação da reunião'
+                                  : 'Preparação da prospecção'}
+                              </h2>
+                              <button
+                                className="primary"
+                                disabled={!!busy || !configuration.analysisConfigured}
+                                onClick={() => analyze(tab)}
+                              >
+                                Gerar nova análise desta versão
+                              </button>
+                            </div>
+                          )}
+                          <p className="mt-3 text-xs text-slate-500">
+                            Modelo: {configuration.model || 'não configurado'}. A análise usa a
+                            versão coletada em {date(snapshot.completed_at)}.
+                          </p>
+                          {!configuration.analysisConfigured && (
+                            <p className="mt-2 text-sm text-amber-800">
+                              Configure o modelo e a chave de IA no servidor para habilitar as
+                              respostas.
+                            </p>
+                          )}
+                        </section>
+                        {answers.filter((answer) => answer.mode === tab).length > 1 && (
+                          <select
+                            aria-label="Respostas anteriores"
+                            className="input max-w-full"
+                            value={currentAnswer?.id || ''}
+                            onChange={(event) =>
+                              setSelectedAnswer(
+                                answers.find((answer) => answer.id === event.target.value),
+                              )
+                            }
+                          >
+                            {answers
+                              .filter((answer) => answer.mode === tab)
+                              .map((answer) => (
+                                <option key={answer.id} value={answer.id}>
+                                  {date(answer.created_at)} ·{' '}
+                                  {answer.question || 'Análise desta versão'}
+                                </option>
+                              ))}
+                          </select>
+                        )}
+                        <AnswerPanel record={currentAnswer} onSource={openSource} onCopy={copy} />
+                      </div>
+                    )}
+                    {tab === 'sources' && sourceData && (
+                      <EvidencePanel
+                        key={snapshot.id}
+                        snapshot={snapshot}
+                        initialSources={sourceData}
+                        onError={setError}
+                      />
+                    )}
+                  </>
+                )}
+              </>
+            )}
+          </>
+        )}
+        {busy === 'analysis' && (
+          <div
+            role="status"
+            className="fixed bottom-5 left-1/2 -translate-x-1/2 bg-branddi-navy text-white shadow-xl rounded-xl p-4 flex items-center gap-3"
+          >
+            <Loader2 className="animate-spin" size={18} />
+            Analisando as evidências e validando as citações…
+          </div>
+        )}
+        {openedSource && (
+          <div
+            className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Fonte da resposta"
+          >
+            <div className="bg-white rounded-xl p-6 max-w-3xl w-full max-h-[85vh] overflow-auto">
+              <div className="flex justify-between gap-3">
+                <h2 className="font-bold">{openedSource.title}</h2>
+                <button className="secondary" onClick={() => setOpenedSource(null)}>
+                  Fechar
+                </button>
+              </div>
+              <p className="text-xs text-slate-500 mt-2">{openedSource.id}</p>
+              <pre className="whitespace-pre-wrap break-words mt-4 text-sm">
+                {openedSource.text}
+              </pre>
+            </div>
+          </div>
+        )}
+      </main>
     </div>
   );
-};
-
-export default App;
+}
+export default function App() {
+  const { user, loading, error, login, logout } = useAuth();
+  if (!supabase)
+    return (
+      <main className="max-w-xl mx-auto p-8">
+        <h1 className="font-bold text-xl">Configurar CRM Intelligence</h1>
+        <p className="mt-3">
+          Defina VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY para iniciar o aplicativo. Consulte as
+          instruções de instalação do projeto.
+        </p>
+      </main>
+    );
+  if (loading) return <p className="p-8 text-center">Carregando sessão…</p>;
+  return (
+    <>
+      {error && (
+        <p role="alert" className="bg-red-50 text-red-800 p-4">
+          {error}
+        </p>
+      )}
+      {user ? (
+        <Workspace key={user.id} user={user} logout={logout} />
+      ) : (
+        <LoginScreen onLogin={login} />
+      )}
+    </>
+  );
+}
