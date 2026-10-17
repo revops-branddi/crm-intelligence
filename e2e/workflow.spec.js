@@ -209,7 +209,9 @@ test('saved versions stay visibly historical and answer user questions', async (
     .getByLabel('O que você precisa saber sobre este negócio?')
     .fill('Qual foi o último compromisso?');
   await page.getByRole('button', { name: 'Responder com fontes' }).click();
-  await expect(page.getByText('Qual foi o último compromisso?', { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('paragraph').filter({ hasText: /^Qual foi o último compromisso\?$/ }),
+  ).toBeVisible();
   await expect(page.getByText('Fato registrado', { exact: true })).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
   await page.screenshot({ path: 'test-results/crm-question-mobile.png', fullPage: true });
