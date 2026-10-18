@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   organizeBriefing,
+  briefingVersions,
   reviewItems,
   draftForReview,
   helpdeskDraftUrl,
@@ -84,4 +85,19 @@ test('materials list only recorded deal links, deduplicates and rejects embedded
   assert.equal(result.materials[0].sourceId, 'deal:1:0');
   assert.equal(result.materials[0].quote, sources[0].text.split('\n')[0]);
   assert.ok(result.materials.every((material) => !('verified' in material)));
+});
+
+test('unified briefing keeps every legacy version ordered by date without including questions', () => {
+  const input = [
+    { id: 'old-meeting', mode: 'briefing', created_at: '2026-10-16T10:00:00Z' },
+    { id: 'question', mode: 'question', created_at: '2026-10-18T10:00:00Z' },
+    { id: 'new-prospecting', mode: 'prospecting', created_at: '2026-10-17T11:00:00Z' },
+    { id: 'overview', mode: 'overview', created_at: '2026-10-17T10:00:00Z' },
+  ];
+  const before = structuredClone(input);
+  assert.deepEqual(
+    briefingVersions(input).map((item) => item.id),
+    ['new-prospecting', 'overview', 'old-meeting'],
+  );
+  assert.deepEqual(input, before);
 });
