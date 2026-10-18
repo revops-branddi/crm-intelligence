@@ -178,6 +178,7 @@ export function SourceDialog({ source, onClose }) {
   return (
     <dialog
       className="source-dialog"
+      aria-label="Evidência original"
       ref={ref}
       onClose={onClose}
       onClick={(event) => {
@@ -195,6 +196,17 @@ export function SourceDialog({ source, onClose }) {
         </button>
       </div>
       <p className="source-id">{source.id}</p>
+      <p className="source-id">
+        {source.date
+          ? `Data registrada: ${new Date(source.date).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}`
+          : 'Fonte sem data registrada'}
+      </p>
+      {source.selectedQuote && (
+        <blockquote className="source-highlight">
+          <strong>Trecho citado</strong>
+          <p>{source.selectedQuote}</p>
+        </blockquote>
+      )}
       <pre>{source.text}</pre>
     </dialog>
   );

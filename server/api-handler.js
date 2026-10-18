@@ -8,6 +8,7 @@ import { buildSources } from './sources.js';
 import { dealDetails } from './deal-details.js';
 import { generateAnswer } from './analysis.js';
 import { analysisConfiguration } from './llm-provider.js';
+import { dealMaterials } from './materials.js';
 
 const uuid = z.string().uuid();
 const inputSchema = z.discriminatedUnion('action', [
@@ -17,7 +18,7 @@ const inputSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('list'), offset: z.number().int().min(0).max(100000).default(0) }),
   z.object({ action: z.literal('latest'), dealId: z.string().regex(/^[1-9]\d{0,14}$/) }),
   z.object({ action: z.literal('start'), dealId: z.string().regex(/^[1-9]\d{0,14}$/) }),
-  ...['step', 'get', 'answers'].map((action) =>
+  ...['step', 'get', 'answers', 'materials'].map((action) =>
     z.object({ action: z.literal(action), snapshotId: uuid }),
   ),
   z.object({
@@ -222,6 +223,7 @@ export async function handleAction(
   }
   const pages = await allPages(db, snapshot.id);
   const sources = buildSources(pages);
+  if (input.action === 'materials') return dealMaterials(sources);
   if (input.action === 'details') return dealDetails(pages, sources, input.offset || 0);
   if (input.action === 'text') {
     const text = sources

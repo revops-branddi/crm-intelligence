@@ -2,7 +2,6 @@ import { useState, useEffect, useRef } from 'react';
 import {
   Zap,
   Database,
-  FileText,
   MessageSquare,
   Search,
   RefreshCw,
@@ -22,13 +21,13 @@ import { LoginScreen } from './components/ui/LoginScreen';
 import { AnswerPanel } from './components/AnswerPanel';
 import { DealDetails } from './components/DealDetails';
 import { EvidencePanel } from './components/EvidencePanel';
+import { BriefingDashboard } from './components/BriefingDashboard';
 import {
   Brand,
   WorkflowIntro,
   ConnectionPanel,
   CollectionGaps,
   SourceDialog,
-  ReadyNote,
 } from './components/WorkspaceUI';
 const date = (value) =>
   value
@@ -41,9 +40,7 @@ const statusLabel = {
   cancelled: 'Cancelada',
 };
 const tabs = [
-  ['overview', 'Visão geral', Database],
-  ['prospecting', 'Prospecção', Search],
-  ['briefing', 'Pré-reunião', FileText],
+  ['overview', 'Briefing 360', LayoutDashboard],
   ['question', 'Perguntas', MessageSquare],
   ['details', 'Empresa e pessoas', FolderOpen],
   ['timeline', 'Histórico', RefreshCw],
@@ -83,6 +80,7 @@ function Workspace({ user, logout }) {
     [openedSource, setOpenedSource] = useState(null);
   const [page, setPage] = useState('home'),
     [savedQuery, setSavedQuery] = useState('');
+  const [briefingStates, setBriefingStates] = useState({});
   const controller = useRef(null),
     mounted = useRef(true);
   useEffect(() => {
@@ -296,11 +294,11 @@ function Workspace({ user, logout }) {
       setBusy(resumeBusy);
     }
   }
-  async function openSource(id) {
+  async function openSource(id, quote) {
     setError('');
     try {
       const result = await apiRequest('source', { snapshotId: snapshot.id, sourceId: id });
-      setOpenedSource(result.source);
+      setOpenedSource({ ...result.source, selectedQuote: quote });
     } catch (error) {
       setError(error.message);
     }
@@ -318,7 +316,7 @@ function Workspace({ user, logout }) {
   const currentAnswer =
     selectedAnswer?.mode === tab ? selectedAnswer : answers.find((answer) => answer.mode === tab);
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${snapshot && page === 'home' ? 'has-deal' : ''}`}>
       <aside className="app-sidebar">
         <Brand />
         <div className="workspace-label">WORKSPACE COMERCIAL</div>
@@ -391,7 +389,7 @@ function Workspace({ user, logout }) {
                   : page === 'connection'
                     ? 'Suas conexões.'
                     : snapshot
-                      ? 'Um negócio. Todo o contexto.'
+                      ? 'Seu briefing comercial.'
                       : 'Boas conversas começam aqui.'}
               </h1>
               <p>
@@ -455,48 +453,51 @@ function Workspace({ user, logout }) {
                 </section>
               )}
               {page === 'home' && (
-                <section className="card launch-card">
-                  <div className="flex justify-between gap-3 items-center mb-4">
-                    <p className="text-xs text-emerald-700 font-semibold">
-                      Pipedrive conectado · conta {configuration.connection.company_id}
-                    </p>
-                    <span className="eyebrow">NOVA ANÁLISE</span>
-                  </div>
-                  <form onSubmit={openDeal} className="flex flex-wrap gap-3 items-end">
-                    <div className="flex-1 min-w-48">
-                      <label htmlFor="deal-id" className="block text-sm font-semibold mb-1">
-                        ID do negócio
-                      </label>
-                      <input
-                        id="deal-id"
-                        className="input w-full"
-                        inputMode="numeric"
-                        pattern="[1-9][0-9]*"
-                        value={dealId}
-                        onChange={(event) => setDealId(event.target.value)}
-                        placeholder="Ex.: 10298"
-                        required
-                        disabled={!!busy}
-                      />
+                <details className="card launch-card" open={!snapshot || undefined}>
+                  <summary>Abrir outro negócio</summary>
+                  <div className="launch-content">
+                    <div className="flex justify-between gap-3 items-center mb-4">
+                      <p className="text-xs text-emerald-700 font-semibold">
+                        Pipedrive conectado · conta {configuration.connection.company_id}
+                      </p>
+                      <span className="eyebrow">NOVA ANÁLISE</span>
                     </div>
-                    <button className="primary" disabled={!!busy}>
-                      <RefreshCw size={15} />
-                      Analisar negócio
-                    </button>
-                    <button
-                      type="button"
-                      className="secondary"
-                      disabled={!!busy}
-                      onClick={() => list()}
-                    >
-                      Consultar histórico
-                    </button>
-                  </form>
-                  <p className="text-xs text-slate-500 mt-3">
-                    Abra a análise salva ou informe um novo negócio para extrair o texto e analisar
-                    automaticamente.
-                  </p>
-                </section>
+                    <form onSubmit={openDeal} className="flex flex-wrap gap-3 items-end">
+                      <div className="flex-1 min-w-48">
+                        <label htmlFor="deal-id" className="block text-sm font-semibold mb-1">
+                          ID do negócio
+                        </label>
+                        <input
+                          id="deal-id"
+                          className="input w-full"
+                          inputMode="numeric"
+                          pattern="[1-9][0-9]*"
+                          value={dealId}
+                          onChange={(event) => setDealId(event.target.value)}
+                          placeholder="Ex.: 10298"
+                          required
+                          disabled={!!busy}
+                        />
+                      </div>
+                      <button className="primary" disabled={!!busy}>
+                        <RefreshCw size={15} />
+                        Analisar negócio
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary"
+                        disabled={!!busy}
+                        onClick={() => list()}
+                      >
+                        Consultar histórico
+                      </button>
+                    </form>
+                    <p className="text-xs text-slate-500 mt-3">
+                      Abra a análise salva ou informe um novo negócio para extrair o texto e
+                      analisar automaticamente.
+                    </p>
+                  </div>
+                </details>
               )}
               {page === 'home' && !snapshot && <WorkflowIntro />}
               {page === 'saved' && (
@@ -599,7 +600,7 @@ function Workspace({ user, logout }) {
               )}
               {snapshot && page === 'home' && (
                 <>
-                  <section className="card p-5">
+                  <section className="card snapshot-card">
                     <div className="flex flex-wrap gap-3 justify-between">
                       <div>
                         <h2 className="text-xl font-bold text-branddi-navy">{snapshot.title}</h2>
@@ -610,8 +611,12 @@ function Workspace({ user, logout }) {
                             : statusLabel[snapshot.status]}
                         </p>
                         <p className="text-xs text-slate-500 mt-1">
-                          Coleta iniciada: {date(snapshot.started_at)} · Finalizada:{' '}
-                          {date(snapshot.completed_at)}
+                          Referência:{' '}
+                          {date(
+                            snapshot.completed_at ||
+                              snapshot.metrics?.referenceAt ||
+                              snapshot.started_at,
+                          )}
                         </p>
                       </div>
                       {snapshot.status !== 'collecting' && (
@@ -649,7 +654,33 @@ function Workspace({ user, logout }) {
                           : 'Reunindo o texto do negócio, histórico, pessoas e e-mails…'}
                       </p>
                     )}
-                    <CollectionGaps gaps={snapshot.gaps} />
+                    <div className="snapshot-metrics">
+                      {[
+                        ['Dias no ciclo', snapshot.metrics?.daysOpen],
+                        ['Dias sem contato registrado', snapshot.metrics?.daysInactive],
+                        ['Contatos registrados', snapshot.metrics?.totalActions],
+                        ['Atividades pendentes', snapshot.metrics?.pendingActivities],
+                      ].map(([label, value]) => (
+                        <div key={label}>
+                          <span>{label}</span>
+                          <strong>{value ?? '—'}</strong>
+                        </div>
+                      ))}
+                    </div>
+                    <details className="snapshot-coverage">
+                      <summary>Detalhes e limites da coleta</summary>
+                      <p>
+                        {snapshot.metrics?.contactDefinition} Métricas calculadas em{' '}
+                        {date(snapshot.metrics?.referenceAt)}.
+                      </p>
+                      <p>
+                        Iniciada em {date(snapshot.started_at)}.{' '}
+                        {snapshot.completed_at
+                          ? `Finalizada em ${date(snapshot.completed_at)}.`
+                          : 'A coleta completa ainda não foi concluída.'}
+                      </p>
+                      <CollectionGaps gaps={snapshot.gaps} />
+                    </details>
                   </section>
                   {ready && (
                     <>
@@ -663,141 +694,110 @@ function Workspace({ user, logout }) {
                                 ? viewSources()
                                 : (setTab(id), setSelectedAnswer(null))
                             }
-                            aria-current={tab === id ? 'page' : undefined}
-                            className={tab === id ? 'active' : ''}
+                            aria-current={
+                              tab === id ||
+                              (id === 'overview' && ['briefing', 'prospecting'].includes(tab))
+                                ? 'page'
+                                : undefined
+                            }
+                            className={
+                              tab === id ||
+                              (id === 'overview' && ['briefing', 'prospecting'].includes(tab))
+                                ? 'active'
+                                : ''
+                            }
                           >
                             <Icon size={16} />
                             {label}
                           </button>
                         ))}
                       </nav>
-                      {tab === 'overview' && (
-                        <div className="space-y-5">
-                          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                            {[
-                              ['Dias no ciclo', snapshot.metrics?.daysOpen],
-                              ['Dias desde contato registrado', snapshot.metrics?.daysInactive],
-                              ['Contatos registrados', snapshot.metrics?.totalActions],
-                              ['Atividades pendentes', snapshot.metrics?.pendingActivities],
-                            ].map(([label, value]) => (
-                              <div className="card p-4" key={label}>
-                                <p className="text-xs text-slate-500">{label}</p>
-                                <p className="text-2xl font-bold mt-2">
-                                  {value ?? 'Sem evidência'}
-                                </p>
-                              </div>
-                            ))}
-                          </div>
-                          <p className="text-xs text-slate-500">
-                            {snapshot.metrics?.contactDefinition} Métricas calculadas em{' '}
-                            {date(snapshot.metrics?.referenceAt)}. Uma nova extração atualiza essa
-                            referência.
-                          </p>
-                          <ReadyNote />
-                          <AnswerPanel
-                            record={answers.find((answer) => answer.mode === 'overview')}
-                            onSource={openSource}
-                            onCopy={copy}
-                          />
-                          <section className="card p-6">
-                            <h2 className="font-bold">Preparar a próxima conversa</h2>
-                            <p className="text-sm text-slate-500 mt-2">
-                              Consulte as fontes, prepare a abordagem ou gere um briefing antes da
-                              reunião. As respostas mostram fatos, inferências, recomendações e
-                              lacunas separadamente.
-                            </p>
-                            <div className="flex flex-wrap gap-3 mt-4">
-                              <button
-                                disabled={!!busy || !configuration.analysisConfigured}
-                                className="primary"
-                                onClick={() => analyze('briefing')}
-                              >
-                                Gerar briefing
-                              </button>
-                              <button
-                                disabled={!!busy || !configuration.analysisConfigured}
-                                className="secondary"
-                                onClick={() => analyze('prospecting')}
-                              >
-                                Preparar prospecção
-                              </button>
-                            </div>
-                          </section>
-                        </div>
+                      {['overview', 'briefing', 'prospecting'].includes(tab) && (
+                        <BriefingDashboard
+                          key={snapshot.id}
+                          snapshot={snapshot}
+                          records={answers}
+                          sessionState={briefingStates[snapshot.id]}
+                          onSessionState={(update) =>
+                            setBriefingStates((previous) => ({
+                              ...previous,
+                              [snapshot.id]: update(previous[snapshot.id] || {}),
+                            }))
+                          }
+                          mode={tab === 'prospecting' ? 'prospecting' : 'briefing'}
+                          record={
+                            selectedAnswer &&
+                            selectedAnswer.mode ===
+                              (tab === 'prospecting' ? 'prospecting' : 'briefing')
+                              ? selectedAnswer
+                              : answers.find(
+                                  (answer) =>
+                                    answer.mode ===
+                                    (tab === 'prospecting' ? 'prospecting' : 'briefing'),
+                                ) ||
+                                answers.find((answer) => answer.mode === 'overview') ||
+                                answers.find((answer) =>
+                                  ['briefing', 'prospecting'].includes(answer.mode),
+                                )
+                          }
+                          onMode={(mode) => {
+                            setTab(mode);
+                            setSelectedAnswer(null);
+                          }}
+                          onSelect={setSelectedAnswer}
+                          onGenerate={analyze}
+                          onSource={openSource}
+                          onCopy={copy}
+                          onAsk={(text) => {
+                            setQuestion(text);
+                            setSelectedAnswer(null);
+                            setTab('question');
+                          }}
+                          configuration={configuration}
+                          busy={Boolean(busy)}
+                        />
                       )}
-                      {['briefing', 'prospecting', 'question'].includes(tab) && (
+                      {tab === 'question' && (
                         <div className="space-y-5">
                           <section className="card p-5">
-                            {tab === 'question' ? (
-                              <form
-                                onSubmit={(event) => {
-                                  event.preventDefault();
-                                  void analyze('question');
-                                }}
-                                className="space-y-3"
+                            <form
+                              onSubmit={(event) => {
+                                event.preventDefault();
+                                void analyze('question');
+                              }}
+                              className="space-y-3"
+                            >
+                              <label htmlFor="question" className="block font-semibold">
+                                O que você precisa saber sobre este negócio?
+                              </label>
+                              <textarea
+                                id="question"
+                                className="input w-full min-h-24"
+                                maxLength={2000}
+                                value={question}
+                                onChange={(event) => setQuestion(event.target.value)}
+                                placeholder="Qual foi o último compromisso assumido pelo cliente e onde isso está registrado?"
+                                required
+                              />
+                              <button
+                                className="primary"
+                                disabled={!!busy || !configuration.analysisConfigured}
                               >
-                                <label htmlFor="question" className="block font-semibold">
-                                  O que você precisa saber sobre este negócio?
-                                </label>
-                                <textarea
-                                  id="question"
-                                  className="input w-full min-h-24"
-                                  maxLength={2000}
-                                  value={question}
-                                  onChange={(event) => setQuestion(event.target.value)}
-                                  placeholder="Qual foi o último compromisso assumido pelo cliente e onde isso está registrado?"
-                                  required
-                                />
-                                <button
-                                  className="primary"
-                                  disabled={!!busy || !configuration.analysisConfigured}
-                                >
-                                  Responder com fontes
-                                </button>
-                              </form>
-                            ) : (
-                              <div className="flex flex-wrap items-center justify-between gap-3">
-                                <h2 className="font-bold">
-                                  {tab === 'briefing'
-                                    ? 'Preparação da reunião'
-                                    : 'Preparação da prospecção'}
-                                </h2>
-                                <button
-                                  className="primary"
-                                  disabled={!!busy || !configuration.analysisConfigured}
-                                  onClick={() => analyze(tab)}
-                                >
-                                  Gerar nova análise desta versão
-                                </button>
-                              </div>
-                            )}
+                                Responder com fontes
+                              </button>
+                            </form>
                             <p className="mt-3 text-xs text-slate-500">
                               {configuration.provider === 'superproxy' ? 'Superproxy · ' : ''}
-                              Modelo: {configuration.model || 'não configurado'}. A análise usa a
-                              versão coletada em{' '}
+                              {configuration.model || 'Modelo não configurado'} · Texto preservado
+                              em{' '}
                               {date(
                                 snapshot.completed_at ||
                                   snapshot.metrics?.referenceAt ||
                                   snapshot.started_at,
                               )}
-                              .
                             </p>
-                            {tab !== 'question' &&
-                              !currentAnswer &&
-                              answers.some((answer) => answer.mode === 'overview') && (
-                                <p className="mt-2 text-sm text-slate-600">
-                                  Exibindo a análise geral salva. Você pode gerar uma análise
-                                  específica desta aba usando o mesmo texto coletado.
-                                </p>
-                              )}
-                            {!configuration.analysisConfigured && (
-                              <p className="mt-2 text-sm text-amber-800">
-                                Configure o modelo e a chave de IA no servidor para habilitar as
-                                respostas.
-                              </p>
-                            )}
                           </section>
-                          {answers.filter((answer) => answer.mode === tab).length > 1 && (
+                          {answers.filter((answer) => answer.mode === 'question').length > 1 && (
                             <select
                               aria-label="Respostas anteriores"
                               className="input max-w-full"
@@ -809,25 +809,15 @@ function Workspace({ user, logout }) {
                               }
                             >
                               {answers
-                                .filter((answer) => answer.mode === tab)
+                                .filter((answer) => answer.mode === 'question')
                                 .map((answer) => (
                                   <option key={answer.id} value={answer.id}>
-                                    {date(answer.created_at)} ·{' '}
-                                    {answer.question || 'Análise desta versão'}
+                                    {date(answer.created_at)} · {answer.question}
                                   </option>
                                 ))}
                             </select>
                           )}
-                          <AnswerPanel
-                            record={
-                              currentAnswer ||
-                              (tab !== 'question'
-                                ? answers.find((answer) => answer.mode === 'overview')
-                                : null)
-                            }
-                            onSource={openSource}
-                            onCopy={copy}
-                          />
+                          <AnswerPanel record={currentAnswer} onSource={openSource} onCopy={copy} />
                         </div>
                       )}
                       {['details', 'timeline'].includes(tab) && (

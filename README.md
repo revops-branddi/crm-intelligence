@@ -103,3 +103,11 @@ npm audit
 Os testes cobrem paginação além de 300 registros, cursores inválidos, preservação de campos v2 e mensagens, checkpoints após falha, erros de gravação, autorização e visibilidade, criptografia, validação de citações, métricas, anexos e migração SQL em PostgreSQL embarcado (PGlite). Os testes de navegador cobrem conexão, extração, perguntas, fontes, erros e logout com dados sintéticos. Nenhum teste usa credenciais ou grava em serviços de produção.
 
 Antes de escolher um novo modelo, avalie uma amostra revisada de cards: vazios, longos, com negativas, alterações de decisor, reuniões pendentes/concluídas, anexos e conflitos entre registros. Compare cobertura, fidelidade das citações, qualidade das lacunas, custo e latência. Não aprove uma troca apenas pela aparência do resumo.
+
+### Briefing 360
+
+A tela principal organiza análises novas e históricas em seis quadros fixos: empresa e grupo, pessoas, histórico, diagnóstico, abordagem e reunião. O objetivo pode alternar entre pré-prospecção e pré-reunião sem iniciar uma coleta ou chamada ao modelo. Todas as conclusões e citações permanecem disponíveis no painel lateral e na análise completa; prévias longas são apenas recolhidas visualmente.
+
+Relatórios e materiais mostram links presentes nos campos do negócio, sem afirmar que foram acessados, revisados ou enviados. O checklist de preparação e as decisões de revisão são marcações da sessão autenticada; não alteram o CRM e não persistem ao recarregar a página.
+
+Ocorrências sinalizadas na análise podem ser revisadas individualmente e encaminhadas como relato editável para `https://revops.branddi.com/operacao/central-revops/helpdesk/novo`, usando os parâmetros oficiais `natureza` e `texto`. A triagem e a confirmação de criação pertencem ao Hub. O CRM Intelligence não afirma que um rascunho é um chamado criado; consulta e prevenção de duplicidade usam a tela Meus chamados do Hub. Não há criação automática nem envio em lote.
