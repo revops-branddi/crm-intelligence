@@ -164,11 +164,8 @@ function Materials({ snapshotId, onSource, onCopy, record, onGenerate, busy }) {
       </div>
       <div className="briefing-action-strip">
         <div>
-          <strong>Prepare o roteiro com as evidências disponíveis</strong>
-          <p>
-            O roteiro pode ser copiado com fontes. Gerar um roteiro não cria nem revisa uma
-            apresentação.
-          </p>
+          <strong>Briefing do negócio</strong>
+          <p>Contexto, abordagem e preparação reunidos.</p>
         </div>
         <div className="briefing-actions">
           <button
@@ -176,10 +173,10 @@ function Materials({ snapshotId, onSource, onCopy, record, onGenerate, busy }) {
             disabled={!record}
             onClick={() => onCopy(answerText(record))}
           >
-            <Copy size={14} /> Copiar roteiro salvo
+            <Copy size={14} /> Copiar briefing
           </button>
-          <button className="primary" disabled={busy} onClick={() => onGenerate('briefing')}>
-            Gerar roteiro de reunião
+          <button className="primary" disabled={busy} onClick={onGenerate}>
+            Atualizar briefing
           </button>
         </div>
       </div>
@@ -191,8 +188,6 @@ export function BriefingDashboard({
   snapshot,
   records,
   record,
-  mode,
-  onMode,
   onSelect,
   onGenerate,
   onSource,
@@ -242,7 +237,6 @@ export function BriefingDashboard({
   const draft =
     selectedIssue && (drafts[selectedIssue.id] || draftForReview(selectedIssue, snapshot));
   const hubUrl = draft && helpdeskDraftUrl(draft);
-  const modes = records.filter((answer) => answer.mode === mode);
   const source = (id, quote) => {
     setSheet(null);
     onSource(id, quote);
@@ -265,14 +259,6 @@ export function BriefingDashboard({
         <div>
           <span className="eyebrow">CONTEXTO PARA A PRÓXIMA CONVERSA</span>
           <h2>Briefing 360</h2>
-        </div>
-        <div className="briefing-mode" role="group" aria-label="Objetivo do briefing">
-          <button aria-pressed={mode === 'prospecting'} onClick={() => onMode('prospecting')}>
-            Pré-prospecção
-          </button>
-          <button aria-pressed={mode === 'briefing'} onClick={() => onMode('briefing')}>
-            Pré-reunião
-          </button>
         </div>
         <button className="secondary" onClick={() => setSheet({ type: 'checklist' })}>
           <ListChecks size={16} /> Revisar preparação
@@ -302,9 +288,7 @@ export function BriefingDashboard({
           {(summary || next) && (
             <section className="briefing-summary">
               <div>
-                <span className="summary-label">
-                  {mode === 'briefing' ? 'PREPARAÇÃO DA REUNIÃO' : 'PREPARAÇÃO DA ABORDAGEM'}
-                </span>
+                <span className="summary-label">RESUMO COMERCIAL</span>
                 <h3>{summary ? 'Momento do negócio' : 'O contexto em seis quadros'}</h3>
                 <p>{summary?.text || 'Empresa, histórico e próximos passos para a conversa.'}</p>
               </div>
@@ -337,14 +321,6 @@ export function BriefingDashboard({
                   ? `Atualizado em ${date(record.created_at)}`
                   : 'Os quadros serão preenchidos com conclusões apoiadas nas fontes.'}
               </p>
-              {record && record.mode !== mode && (
-                <p className="attention-text">
-                  Exibindo a análise{' '}
-                  {record.mode === 'overview' ? 'geral' : 'salva de outro objetivo'}. Gere uma
-                  versão específica para {mode === 'briefing' ? 'a reunião' : 'a prospecção'} quando
-                  precisar.
-                </p>
-              )}
             </div>
             <div className="briefing-actions">
               <button
@@ -357,26 +333,18 @@ export function BriefingDashboard({
               <button
                 className="primary"
                 disabled={busy || !configuration.analysisConfigured}
-                onClick={() => onGenerate(mode)}
+                onClick={onGenerate}
               >
                 <RefreshCw size={14} />
-                {mode === 'briefing' ? 'Gerar briefing' : 'Gerar prospecção'}
+                {record ? 'Atualizar briefing' : 'Gerar briefing'}
               </button>
             </div>
           </div>
           <div className="briefing-grid">
             {boards.map((board, index) => {
               const Icon = icons[board.id];
-              const priority =
-                mode === 'briefing'
-                  ? ['people', 'meeting'].includes(board.id)
-                  : ['company', 'approach'].includes(board.id);
               return (
-                <section
-                  className={`briefing-board ${priority ? 'priority' : ''}`}
-                  key={board.id}
-                  aria-label={board.title}
-                >
+                <section className="briefing-board" key={board.id} aria-label={board.title}>
                   <header>
                     <span className="board-icon">
                       <Icon size={18} />
@@ -486,17 +454,18 @@ export function BriefingDashboard({
           </div>
           <details className="briefing-full">
             <summary>Ler análise completa e versões anteriores</summary>
-            {modes.length > 1 && (
+            {records.length > 1 && (
               <label>
                 Versão da análise
                 <select
+                  aria-label="Versão da análise"
                   className="input"
-                  value={record?.mode === mode ? record.id : ''}
+                  value={record?.id || ''}
                   onChange={(event) =>
                     onSelect(records.find((item) => item.id === event.target.value))
                   }
                 >
-                  {modes.map((item) => (
+                  {records.map((item) => (
                     <option key={item.id} value={item.id}>
                       {date(item.created_at)} · {item.model}
                     </option>

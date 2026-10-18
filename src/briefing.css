@@ -135,25 +135,6 @@
   font-size: 8px;
   margin-bottom: 5px;
 }
-.briefing-mode {
-  display: inline-flex;
-  padding: 4px;
-  border: 1px solid #d8e4e5;
-  background: #fff;
-  border-radius: 9px;
-}
-.briefing-mode button {
-  padding: 9px 15px;
-  border-radius: 6px;
-  font-size: 12px;
-  color: #526d78;
-  min-height: 36px;
-}
-.briefing-mode button[aria-pressed='true'] {
-  background: #103f4c;
-  color: white;
-  font-weight: 600;
-}
 .briefing-context {
   display: flex;
   flex-wrap: wrap;
@@ -326,10 +307,6 @@
   color: #386671;
   background: #eef4f5;
   flex-shrink: 0;
-}
-.briefing-board.priority .board-icon {
-  background: #e1f2ec;
-  color: #237563;
 }
 .board-number {
   margin-left: auto;
@@ -870,13 +847,6 @@
   }
   .briefing-toolbar > div:first-child {
     width: 100%;
-  }
-  .briefing-mode {
-    width: 100%;
-  }
-  .briefing-mode button {
-    flex: 1;
-    padding-inline: 10px;
   }
   .briefing-toolbar > .secondary {
     width: 100%;

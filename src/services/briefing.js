@@ -1,3 +1,10 @@
+// Historical analyses remain versions of the same briefing; questions are separate.
+export function briefingVersions(records = []) {
+  return records
+    .filter((record) => ['overview', 'briefing', 'prospecting'].includes(record.mode))
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+}
+
 export const briefingBoards = [
   {
     id: 'company',

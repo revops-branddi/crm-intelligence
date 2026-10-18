@@ -15,6 +15,7 @@ import {
 import { supabase } from './lib/supabase';
 import { useAuth } from './hooks/useAuth';
 import { apiRequest } from './services/api';
+import { briefingVersions } from './services/briefing';
 import { LoginScreen } from './components/ui/LoginScreen';
 import { AnswerPanel } from './components/AnswerPanel';
 import { EvidencePanel } from './components/EvidencePanel';
@@ -61,8 +62,8 @@ function Workspace({ user, logout }) {
     [hasMore, setHasMore] = useState(false);
   const [answers, setAnswers] = useState([]),
     [selectedAnswer, setSelectedAnswer] = useState(null),
-    [question, setQuestion] = useState(''),
-    [tab, setTab] = useState('overview');
+    [selectedBriefing, setSelectedBriefing] = useState(null),
+    [question, setQuestion] = useState('');
   const [busy, setBusy] = useState(''),
     [error, setError] = useState(''),
     [notice, setNotice] = useState(''),
@@ -148,7 +149,7 @@ function Workspace({ user, logout }) {
       setSelectedAnswer(null);
       setSourceData(null);
       setOpenedSource(null);
-      setTab('overview');
+      setSelectedBriefing(null);
       setDealId(result.snapshot.deal_id);
       setNotice('Versão histórica carregada. Use “Nova extração” para atualizar os dados.');
     } catch (error) {
@@ -172,7 +173,7 @@ function Workspace({ user, logout }) {
       setSelectedAnswer(null);
       setSourceData(null);
       setOpenedSource(null);
-      setTab('overview');
+      setSelectedBriefing(null);
       setPage('home');
       setNotice(
         `Versão salva de ${date(result.snapshot.started_at)} carregada. Use “Nova extração” para atualizar os dados.`,
@@ -203,7 +204,7 @@ function Workspace({ user, logout }) {
       }
       setSourceData(null);
       setOpenedSource(null);
-      setTab('overview');
+      setSelectedBriefing(null);
       let retries = 0,
         analyzed = Boolean(existing && answers.some((answer) => answer.mode === 'overview')),
         analysisSucceeded = analyzed;
@@ -255,8 +256,8 @@ function Workspace({ user, logout }) {
       );
       if (mounted.current) {
         setAnswers((previous) => [result.answer, ...previous]);
-        setSelectedAnswer(result.answer);
-        if (mode !== 'question') setTab(mode);
+        if (mode === 'question') setSelectedAnswer(result.answer);
+        else setSelectedBriefing(result.answer);
         setNotice(mode === 'question' ? 'Resposta pronta.' : 'Briefing atualizado.');
         return true;
       }
@@ -302,6 +303,9 @@ function Workspace({ user, logout }) {
   }
   const ready =
     snapshot && (snapshot.analysisReady || ['complete', 'partial'].includes(snapshot.status));
+  const versions = briefingVersions(answers);
+  const currentBriefing =
+    versions.find((record) => record.id === selectedBriefing?.id) || versions[0];
   const currentAnswer =
     selectedAnswer?.mode === 'question'
       ? selectedAnswer
@@ -681,7 +685,7 @@ function Workspace({ user, logout }) {
                       <BriefingDashboard
                         key={snapshot.id}
                         snapshot={snapshot}
-                        records={answers}
+                        records={versions}
                         sessionState={briefingStates[snapshot.id]}
                         onSessionState={(update) =>
                           setBriefingStates((previous) => ({
@@ -689,28 +693,9 @@ function Workspace({ user, logout }) {
                             [snapshot.id]: update(previous[snapshot.id] || {}),
                           }))
                         }
-                        mode={tab === 'prospecting' ? 'prospecting' : 'briefing'}
-                        record={
-                          selectedAnswer &&
-                          selectedAnswer.mode ===
-                            (tab === 'prospecting' ? 'prospecting' : 'briefing')
-                            ? selectedAnswer
-                            : answers.find(
-                                (answer) =>
-                                  answer.mode ===
-                                  (tab === 'prospecting' ? 'prospecting' : 'briefing'),
-                              ) ||
-                              answers.find((answer) => answer.mode === 'overview') ||
-                              answers.find((answer) =>
-                                ['briefing', 'prospecting'].includes(answer.mode),
-                              )
-                        }
-                        onMode={(mode) => {
-                          setTab(mode);
-                          setSelectedAnswer(null);
-                        }}
-                        onSelect={setSelectedAnswer}
-                        onGenerate={analyze}
+                        record={currentBriefing}
+                        onSelect={setSelectedBriefing}
+                        onGenerate={() => analyze('overview')}
                         onSource={openSource}
                         onCopy={copy}
                         onAsk={(text) => {

@@ -99,6 +99,7 @@ async function fixture(
     coreFirst = false,
     rich = false,
     company = false,
+    savedAnswers,
   } = {},
 ) {
   const calls = [];
@@ -149,7 +150,9 @@ async function fixture(
         body = { connected: false };
         break;
       case 'latest':
-        body = cached ? { snapshot, answers: [cachedAnswer] } : { snapshot: null, answers: [] };
+        body = cached
+          ? { snapshot, answers: savedAnswers || [cachedAnswer] }
+          : { snapshot: null, answers: [] };
         break;
       case 'start':
         body = {
@@ -271,7 +274,7 @@ test('connects without persisting token and extracts before analyzing with evide
   ).toBeVisible();
   expect(calls.some((call) => call.action === 'answer' && call.mode === 'overview')).toBe(true);
   expect(await page.evaluate(() => localStorage.getItem('pipedriveToken'))).toBeNull();
-  await page.getByRole('button', { name: 'Gerar briefing', exact: true }).click();
+  await page.getByRole('button', { name: 'Atualizar briefing', exact: true }).click();
   await expect(
     page.locator('.briefing-grid').getByText('A reunião foi confirmada pelo cliente.'),
   ).toBeVisible();
@@ -443,7 +446,7 @@ function richSections() {
   }));
 }
 
-test('Briefing 360 keeps six symmetric boards, preserves details and switches modes without generating', async ({
+test('Briefing 360 keeps six symmetric boards, preserves details without mode selection or automatic generation', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1536, height: 1100 });
@@ -480,11 +483,8 @@ test('Briefing 360 keeps six symmetric boards, preserves details and switches mo
     'A marca pertence a um grupo? Quais marcas e BUs fazem parte dele?',
   );
   await expect(page.getByRole('dialog')).toHaveCount(0);
-  await page.getByRole('button', { name: 'Pré-prospecção', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Pré-prospecção', exact: true })).toHaveAttribute(
-    'aria-pressed',
-    'true',
-  );
+  await expect(page.getByRole('group', { name: 'Objetivo do briefing' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /Pré-prospecção|Pré-reunião/ })).toHaveCount(0);
   expect(calls.some((call) => call.action === 'answer')).toBe(false);
   await page.getByRole('button', { name: 'Revisar preparação' }).click();
   await page.getByRole('checkbox').first().check();
@@ -523,4 +523,57 @@ test('reviews one occurrence at a time and hands an editable draft to the canoni
     'https://report.branddi.com/report/teste',
   );
   await expect(page.getByText('Link registrado · a verificar', { exact: true })).toBeVisible();
+});
+
+test('one briefing keeps legacy versions and question selection independent, then updates the unified analysis', async ({
+  page,
+}) => {
+  const older = {
+    ...answer('briefing'),
+    id: '44444444-4444-4444-8444-444444444444',
+    created_at: '2026-10-17T12:00:00Z',
+  };
+  older.answer.sections[0].claims[0].text = 'Compromisso preservado da versão anterior.';
+  const recent = {
+    ...answer('prospecting'),
+    id: '55555555-5555-4555-8555-555555555555',
+    created_at: '2026-10-17T12:01:00Z',
+  };
+  recent.answer.sections[0].claims[0].text = 'Contexto comercial recente.';
+  const question = {
+    ...answer('question', 'Pergunta antiga'),
+    id: '66666666-6666-4666-8666-666666666666',
+    created_at: '2026-10-17T12:03:00Z',
+  };
+  const calls = await fixture(page, { cached: true, savedAnswers: [older, question, recent] });
+  await page.getByLabel('ID do negócio').fill('7');
+  await page.getByRole('button', { name: 'Analisar negócio', exact: true }).click();
+  await expect(page.locator('.briefing-grid')).toContainText('Contexto comercial recente.');
+  await page.getByText('Ler análise completa e versões anteriores', { exact: true }).click();
+  const versions = page.getByLabel('Versão da análise', { exact: true });
+  await expect(versions.locator('option')).toHaveCount(2);
+  await versions.selectOption(older.id);
+  await expect(page.locator('.briefing-grid')).toContainText(
+    'Compromisso preservado da versão anterior.',
+  );
+  await page
+    .getByLabel('O que você precisa saber sobre este negócio?')
+    .fill('Qual a próxima ação?');
+  await page.getByRole('button', { name: 'Perguntar', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'Perguntas sobre o briefing' })).toContainText(
+    'Qual a próxima ação?',
+  );
+  await expect(versions).toHaveValue(older.id);
+  await expect(page.locator('.briefing-grid')).toContainText(
+    'Compromisso preservado da versão anterior.',
+  );
+  await page.getByRole('button', { name: 'Atualizar briefing', exact: true }).click();
+  await expect(page.locator('.briefing-grid')).toContainText(
+    'A reunião foi confirmada pelo cliente.',
+  );
+  expect(calls.filter((call) => call.action === 'answer').map((call) => call.mode)).toEqual([
+    'question',
+    'overview',
+  ]);
+  expect(calls.some((call) => ['start', 'step'].includes(call.action))).toBe(false);
 });

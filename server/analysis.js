@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { HttpError } from './errors.js';
 import { analysisConfiguration, superproxyCompletion, superproxySchema } from './llm-provider.js';
 import { normalizeText, selectContext } from './sources.js';
-export const PROMPT_VERSION = 'branddi-evidence-2.7-concise';
+export const PROMPT_VERSION = 'branddi-evidence-2.8-unified';
 const citation = z
   .object({ sourceId: z.string().min(1), quote: z.string().min(1).max(1200) })
   .strict();
@@ -115,7 +115,7 @@ export function validateSupportedAnswer(value, sources) {
 }
 const modes = {
   overview:
-    'Entregue a análise comercial completa deste negócio, com estas oito seções quando houver evidências: 1. Resumo executivo e momento do negócio; 2. Empresa e aderência aos produtos Branddi; 3. Participantes, papéis e prioridade de contato; 4. Cronologia comercial e última interação; 5. Dores, objeções e como abordá-las; 6. Prospecção e mensagens sugeridas; 7. Preparação da reunião, compromissos e perguntas; 8. Próximos passos e responsáveis confirmados. Inclua as pessoas registradas relevantes, canais de contato disponíveis e as datas dos marcos. Mensagens sugeridas devem ser identificadas como recomendações. Preserve recusas explícitas de contato. Quando faltar cargo, autoridade, responsável, data ou informação, declare a lacuna. Não invente scores ou SLAs.',
+    'Prepare um único briefing comercial que reúna o contexto para abordagem e reunião, sem separar modos ou exigir que o usuário escolha uma etapa. Organize em seis assuntos: Empresa e grupo; Pessoas e papéis; Histórico comercial; Diagnóstico e oportunidade; Abordagem e próximos passos; Reunião e materiais. Inclua o momento do negócio, contato adequado, motivo do aceite quando registrado, objeções, compromissos, relatório, apresentação e a próxima ação. Use o estágio registrado para priorizar a ação, sem omitir as demais informações disponíveis. Preserve recusas explícitas de contato. Mensagens sugeridas são recomendações; não invente cargo, autoridade, responsável, data, score ou SLA. Seja objetivo e não repita o mesmo fato entre quadros.',
   briefing:
     'Prepare a reunião incluindo Empresa e grupo (marca, organização, grupo empresarial, marcas relacionadas, domínio, segmento e abrangência), momento do negócio, compromissos anteriores, participantes e papéis confirmados, objeções e propostas, perguntas e próximos passos. Indique fatos antigos e conflitos. Não atribua cargo ou autoridade sem evidência.',
   prospecting:
