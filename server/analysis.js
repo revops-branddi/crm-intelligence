@@ -1,9 +1,10 @@
 import { z } from 'zod';
 import { HttpError } from './errors.js';
+import { analysisConfiguration, superproxyCompletion, superproxySchema } from './llm-provider.js';
 import { normalizeText, selectContext } from './sources.js';
 export const PROMPT_VERSION = 'branddi-evidence-2.3';
 const citation = z
-  .object({ sourceId: z.string().min(1), quote: z.string().min(12).max(1200) })
+  .object({ sourceId: z.string().min(1), quote: z.string().min(1).max(1200) })
   .strict();
 const claim = z
   .object({
@@ -51,7 +52,18 @@ export function validateAnswer(value, sources) {
       for (const ref of item.citations) {
         const source = lookup.get(ref.sourceId);
         const quote = normalizeText(ref.quote);
-        if (!source || quote.length < 12 || !normalizeText(source.text).includes(quote))
+        // Short structured fields (e.g. `done: false`) are valid evidence when
+        // quoted as a complete, unique line. Arbitrary short fragments stay rejected.
+        const completeField =
+          source &&
+          /^[^:\n]{2,80}:\s*\S/.test(quote) &&
+          source.text.split('\n').filter((line) => normalizeText(line) === quote).length === 1;
+        if (
+          !source ||
+          !quote ||
+          (quote.length < 12 && !completeField) ||
+          !normalizeText(source.text).includes(quote)
+        )
           throw new HttpError(
             502,
             'A IA citou uma fonte ou um trecho que não pertence ao contexto. Resposta rejeitada.',
@@ -59,6 +71,44 @@ export function validateAnswer(value, sources) {
           );
       }
   return parsed.data;
+}
+// Keep supported conclusions usable without ever repairing or inventing evidence.
+// Structural failures still reject the whole response; unsupported claims are
+// removed in full and disclosed in the saved briefing.
+export function validateSupportedAnswer(value, sources) {
+  const parsed = answerSchema.safeParse(value);
+  if (!parsed.success) return validateAnswer(value, sources);
+  let rejected = 0;
+  const sections = parsed.data.sections
+    .map((section) => ({
+      ...section,
+      claims: section.claims.filter((item) => {
+        try {
+          validateAnswer(
+            { sections: [{ ...section, claims: [item] }], gaps: [], suggestedQuestions: [] },
+            sources,
+          );
+          return true;
+        } catch (error) {
+          if (error.code !== 'invalid_evidence') throw error;
+          rejected++;
+          return false;
+        }
+      }),
+    }))
+    .filter((section) => section.claims.length);
+  if (rejected && !sections.length)
+    throw new HttpError(
+      502,
+      'Nenhuma conclusão da IA passou na validação de evidências. Os dados brutos continuam salvos.',
+      'invalid_evidence',
+    );
+  const answer = validateAnswer({ ...parsed.data, sections }, sources);
+  if (rejected)
+    answer.gaps.unshift(
+      `Análise parcial: ${rejected} conclusão(ões) removida(s) porque a citação não correspondeu às fontes consultadas. Confira as fontes ou gere uma nova análise para completar o briefing.`,
+    );
+  return answer;
 }
 const modes = {
   overview:
@@ -79,9 +129,14 @@ export async function generateAnswer({
   env = process.env,
 }) {
   if (!modes[mode]) throw new HttpError(400, 'Tipo de análise inválido.', 'invalid_mode');
-  let model = env.GEMINI_MODEL;
-  if (!model || !/^gemini-[a-z0-9.-]+$/.test(model) || !env.GEMINI_API_KEY)
-    throw new HttpError(503, 'Configure o modelo e a chave Gemini no servidor.', 'configuration');
+  const config = analysisConfiguration(env);
+  let model = config.model;
+  if (!config.analysisConfigured)
+    throw new HttpError(
+      503,
+      'Configure o provedor, o modelo e a chave de IA no servidor.',
+      'configuration',
+    );
   const requestQuestion = question || modes[mode];
   const context = selectContext(
     sources,
@@ -101,98 +156,125 @@ Cada quote deve ser um trecho contínuo de uma única linha, sem juntar campos, 
 Se a pergunta não puder ser respondida, retorne sections vazio e explique em gaps. Nenhum dado é melhor do que um fato inventado. Não declare que algo nunca ocorreu se o histórico ou contexto estiver parcial. suggestedQuestions são perguntas para esclarecer lacunas.
 O responsável atual só pode ser atribuído pelo owner_id/Proprietário do negócio e pelo usuário correspondente; um nome presente na lista de usuários não prova responsabilidade. Consulte todas as partes dos campos do negócio antes de declarar que falta uma data ou compromisso. Datas previstas no card são datas registradas no CRM, não confirmação de reunião realizada. A agenda do Google não foi consultada: não faça afirmações sobre ela.
 As datas e métricas fornecidas são calculadas por código. Não recalcule SLA nem invente limites comerciais. Faça referência à data da extração; dados históricos não descrevem automaticamente o estado atual.`;
-  const body = {
-    systemInstruction: { parts: [{ text: system }] },
-    contents: [
-      {
-        role: 'user',
-        parts: [
-          {
-            text: JSON.stringify({
-              question: requestQuestion,
-              referenceAt: snapshot.completed_at,
-              timezone: 'America/Sao_Paulo',
-              metrics: snapshot.metrics,
-              coverage: snapshot.gaps,
-              contextCoverage: context.manifest,
-              sources: context.sources,
-            }),
-          },
-        ],
-      },
-    ],
-    generationConfig: {
-      responseMimeType: 'application/json',
-      responseJsonSchema: providerSchema,
-      maxOutputTokens: 8192,
-      ...(/^gemini-3[.-]/.test(model) ? { thinkingConfig: { thinkingLevel: 'low' } } : {}),
-    },
-  };
   const started = Date.now();
-  let response;
-  const signal = AbortSignal.timeout(75000);
-  const models = [model];
-  if (
-    env.GEMINI_FALLBACK_MODEL &&
-    env.GEMINI_FALLBACK_MODEL !== model &&
-    /^gemini-[a-z0-9.-]+$/.test(env.GEMINI_FALLBACK_MODEL)
-  )
-    models.push(env.GEMINI_FALLBACK_MODEL);
-  try {
-    for (const candidateModel of models) {
-      model = candidateModel;
-      delete body.generationConfig.thinkingConfig;
-      if (/^gemini-3[.-]/.test(model))
-        body.generationConfig.thinkingConfig = { thinkingLevel: 'low' };
-      response = await fetcher(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+  let text, usage;
+  if (config.provider === 'superproxy') {
+    const schema = superproxySchema(z.toJSONSchema(answerSchema));
+    const completion = await superproxyCompletion({
+      system,
+      input: {
+        question: requestQuestion,
+        referenceAt: snapshot.completed_at,
+        timezone: 'America/Sao_Paulo',
+        metrics: snapshot.metrics,
+        coverage: snapshot.gaps,
+        contextCoverage: context.manifest,
+        sources: context.sources,
+      },
+      schema,
+      model,
+      key: env.SUPERPROXY_API_KEY,
+      fetcher,
+    });
+    text = completion.text;
+    usage = completion.usage;
+    model = completion.model;
+  } else {
+    const body = {
+      systemInstruction: { parts: [{ text: system }] },
+      contents: [
         {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
-          body: JSON.stringify(body),
-          signal,
+          role: 'user',
+          parts: [
+            {
+              text: JSON.stringify({
+                question: requestQuestion,
+                referenceAt: snapshot.completed_at,
+                timezone: 'America/Sao_Paulo',
+                metrics: snapshot.metrics,
+                coverage: snapshot.gaps,
+                contextCoverage: context.manifest,
+                sources: context.sources,
+              }),
+            },
+          ],
         },
+      ],
+      generationConfig: {
+        responseMimeType: 'application/json',
+        responseJsonSchema: providerSchema,
+        maxOutputTokens: 8192,
+        ...(/^gemini-3[.-]/.test(model) ? { thinkingConfig: { thinkingLevel: 'low' } } : {}),
+      },
+    };
+
+    let response;
+    const signal = AbortSignal.timeout(75000);
+    const models = [model];
+    if (
+      env.GEMINI_FALLBACK_MODEL &&
+      env.GEMINI_FALLBACK_MODEL !== model &&
+      /^gemini-[a-z0-9.-]+$/.test(env.GEMINI_FALLBACK_MODEL)
+    )
+      models.push(env.GEMINI_FALLBACK_MODEL);
+    try {
+      for (const candidateModel of models) {
+        model = candidateModel;
+        delete body.generationConfig.thinkingConfig;
+        if (/^gemini-3[.-]/.test(model))
+          body.generationConfig.thinkingConfig = { thinkingLevel: 'low' };
+        response = await fetcher(
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
+            body: JSON.stringify(body),
+            signal,
+          },
+        );
+        if (![500, 502, 503, 504].includes(response.status)) break;
+        // One server-configured alternate, within the same deadline. Do not retry
+        // invalid evidence, quota/auth failures, or a completed model response.
+        await response.body?.cancel();
+      }
+    } catch {
+      throw new HttpError(
+        504,
+        'A análise excedeu o tempo disponível. Os dados brutos estão salvos; tente novamente.',
+        'model_timeout',
       );
-      if (![500, 502, 503, 504].includes(response.status)) break;
-      // One server-configured alternate, within the same deadline. Do not retry
-      // invalid evidence, quota/auth failures, or a completed model response.
-      await response.body?.cancel();
     }
-  } catch {
-    throw new HttpError(
-      504,
-      'A análise excedeu o tempo disponível. Os dados brutos estão salvos; tente novamente.',
-      'model_timeout',
-    );
+    if ([500, 502, 503, 504].includes(response.status))
+      throw new HttpError(
+        503,
+        'O provedor de IA está temporariamente indisponível ou com alta demanda. Os dados continuam salvos; tente gerar a análise novamente em instantes.',
+        'model_unavailable',
+        15,
+      );
+    if (!response.ok)
+      throw new HttpError(
+        response.status === 429 ? 429 : 502,
+        response.status === 429
+          ? 'O provedor atingiu seu limite. Tente novamente mais tarde.'
+          : 'O provedor de IA recusou a análise. Verifique o modelo configurado e tente novamente.',
+        'model_error',
+        response.status === 429 ? 30 : null,
+      );
+    const result = await response.json();
+    const candidate = result.candidates?.[0];
+    if (candidate?.finishReason !== 'STOP')
+      throw new HttpError(
+        502,
+        'A IA não concluiu a resposta (limite, bloqueio ou interrupção). Nenhuma análise foi salva.',
+        'incomplete_answer',
+      );
+    text = (candidate.content?.parts || [])
+      .filter((p) => !p.thought)
+      .map((p) => p.text || '')
+      .join('');
+
+    usage = result.usageMetadata || {};
   }
-  if ([500, 502, 503, 504].includes(response.status))
-    throw new HttpError(
-      503,
-      'O provedor de IA está temporariamente indisponível ou com alta demanda. Os dados continuam salvos; tente gerar a análise novamente em instantes.',
-      'model_unavailable',
-      15,
-    );
-  if (!response.ok)
-    throw new HttpError(
-      response.status === 429 ? 429 : 502,
-      response.status === 429
-        ? 'O provedor atingiu seu limite. Tente novamente mais tarde.'
-        : 'O provedor de IA recusou a análise. Verifique o modelo configurado e tente novamente.',
-      'model_error',
-      response.status === 429 ? 30 : null,
-    );
-  const result = await response.json();
-  const candidate = result.candidates?.[0];
-  if (candidate?.finishReason !== 'STOP')
-    throw new HttpError(
-      502,
-      'A IA não concluiu a resposta (limite, bloqueio ou interrupção). Nenhuma análise foi salva.',
-      'incomplete_answer',
-    );
-  const text = (candidate.content?.parts || [])
-    .filter((p) => !p.thought)
-    .map((p) => p.text || '')
-    .join('');
   let value;
   try {
     value = JSON.parse(text);
@@ -200,7 +282,8 @@ As datas e métricas fornecidas são calculadas por código. Não recalcule SLA 
     throw new HttpError(502, 'A IA retornou conteúdo inválido.', 'invalid_answer');
   }
   const selectedIds = new Set(context.manifest.sourceIds);
-  const answer = validateAnswer(
+  const validate = config.provider === 'superproxy' ? validateSupportedAnswer : validateAnswer;
+  const answer = validate(
     value,
     sources.filter((source) => selectedIds.has(source.id)),
   );
@@ -213,8 +296,9 @@ As datas e métricas fornecidas são calculadas por código. Não recalcule SLA 
   return {
     answer,
     model,
-    prompt_version: PROMPT_VERSION,
-    usage: result.usageMetadata || {},
+    prompt_version:
+      config.provider === 'superproxy' ? 'branddi-evidence-2.4-superproxy' : PROMPT_VERSION,
+    usage,
     context_manifest: context.manifest,
     elapsed_ms: Date.now() - started,
   };
