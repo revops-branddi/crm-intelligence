@@ -102,13 +102,16 @@ export function claimCategory(claim, title = '') {
   if (sectionMatch) return sectionMatch[0];
   return rules.find(([, rule]) => rule.test(clean(claim.text)))?.[0] || 'history';
 }
-export function organizeBriefing(record) {
+export function organizeBriefing(record, company) {
   const boards = briefingBoards.map((board) => ({ ...board, claims: [] }));
   for (const [sectionIndex, section] of (record?.answer?.sections || []).entries())
     for (const [claimIndex, claim] of section.claims.entries()) {
       const item = { ...claim, key: `${sectionIndex}:${claimIndex}`, section: section.title };
       boards.find((board) => board.id === claimCategory(claim, section.title)).claims.push(item);
     }
+  // Raw organization fields remain visible even when the saved AI answer omits
+  // company context. AI conclusions are retained after the attributed records.
+  boards[0].claims.unshift(...(company?.facts || []));
   return boards;
 }
 export function reviewItems(record) {
@@ -155,14 +158,19 @@ export function helpdeskDraftUrl(draft) {
   url.searchParams.set('texto', text);
   return url.href;
 }
-export function answerText(record) {
-  if (!record) return '';
+export function answerText(record, company) {
+  const profile = company?.facts?.length
+    ? `Empresa e grupo · organização #${company.organizationId || 'não vinculada'}\n${company.facts.map((fact) => `${fact.attribution}: ${fact.text}\n${fact.citations.map((ref) => `Fonte ${ref.sourceId}: “${ref.quote}”`).join('\n')}`).join('\n\n')}\n${company.warnings.join('\n')}\n\n`
+    : '';
+  if (!record) return profile;
   return (
-    record.answer.sections
+    profile +
+    (record.answer.sections
       .map(
         (section) =>
           `${section.title}\n${section.claims.map((claim) => `${claimLabels[claim.kind]}: ${claim.text}\n${claim.citations.map((ref) => `Fonte ${ref.sourceId}: “${ref.quote}”`).join('\n')}`).join('\n\n')}`,
       )
-      .join('\n\n') + `\n\nLacunas:\n${record.answer.gaps.join('\n')}`
+      .join('\n\n') +
+      `\n\nLacunas:\n${record.answer.gaps.join('\n')}`)
   );
 }

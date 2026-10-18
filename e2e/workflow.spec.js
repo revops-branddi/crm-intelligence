@@ -10,6 +10,38 @@ const source = {
   text: 'O cliente confirmou a reunião de terça-feira.',
   date: '2026-10-16',
 };
+const companySource = {
+  ...source,
+  id: 'notes:aaaaaaaaaaaa:2:0',
+  title: 'Contexto da empresa',
+  text: 'Faz parte de grupo: Pertence ao Grupo Arco.',
+};
+const companyProfile = {
+  organizationId: '250',
+  facts: [
+    {
+      key: 'company:group',
+      field: 'group',
+      category: 'company',
+      kind: 'fact',
+      origin: 'note',
+      attribution: 'Nota interna do card · 16/10/2026',
+      text: 'Grupo empresarial: Pertence ao Grupo Arco.',
+      citations: [{ sourceId: companySource.id, quote: companySource.text }],
+    },
+    {
+      key: 'company:identity',
+      field: 'identity',
+      category: 'company',
+      kind: 'fact',
+      origin: 'organization',
+      attribution: 'Cadastro da organização #250',
+      text: 'Empresa: Lume · Site: lume.example.test · Segmento: Varejo',
+      citations: [{ sourceId: 'organization:250:0', quote: 'Nome: Lume' }],
+    },
+  ],
+  warnings: ['O grupo não está preenchido no cadastro da organização.'],
+};
 const snapshot = {
   id,
   deal_id: '7',
@@ -60,7 +92,14 @@ function answer(mode, question = '') {
 }
 async function fixture(
   page,
-  { connected = true, failAnalysis = false, cached = false, coreFirst = false, rich = false } = {},
+  {
+    connected = true,
+    failAnalysis = false,
+    cached = false,
+    coreFirst = false,
+    rich = false,
+    company = false,
+  } = {},
 ) {
   const calls = [];
   const cachedAnswer = answer('overview');
@@ -190,8 +229,11 @@ async function fixture(
           ],
         };
         break;
+      case 'company':
+        body = company ? companyProfile : { organizationId: null, facts: [], warnings: [] };
+        break;
       case 'source':
-        body = { source };
+        body = { source: request.sourceId === companySource.id ? companySource : source };
         break;
       case 'raw':
         body = {
@@ -243,6 +285,45 @@ test('connects without persisting token and extracts before analyzing with evide
   await expect(page.getByText('Resposta original do CRM')).toBeVisible();
   await page.screenshot({ path: 'test-results/crm-sources-desktop.png', fullPage: true });
   expect(errors).toEqual([]);
+});
+
+test('saved briefing displays organization and group evidence without another model call', async ({
+  page,
+}) => {
+  const calls = await fixture(page, { cached: true, company: true });
+  await page.getByLabel('ID do negócio').fill('7');
+  await page.getByRole('button', { name: 'Analisar negócio', exact: true }).click();
+  const board = page.getByRole('region', { name: 'Empresa e grupo', exact: true });
+  await expect(board).toContainText('Grupo empresarial: Pertence ao Grupo Arco.');
+  await expect(board).toContainText('Empresa: Lume');
+  await expect(board).toContainText('Nota interna do card');
+  await expect(board).toContainText('Cadastro da organização #250');
+  await expect(board.getByText('Sem conclusão nesta análise')).toHaveCount(0);
+  await board.getByRole('button', { name: 'Ver quadro completo' }).click();
+  await expect(page.getByRole('dialog')).toContainText(
+    'base comum dos cards vinculados ao mesmo ID',
+  );
+  await expect(page.getByRole('dialog')).toContainText('não está preenchido no cadastro');
+  await page
+    .getByRole('dialog')
+    .getByRole('button', { name: /Abrir fonte 1/ })
+    .first()
+    .click();
+  await expect(page.getByRole('dialog', { name: 'Evidência original' })).toContainText(
+    companySource.text,
+  );
+  expect(calls.some((call) => ['answer', 'start', 'step'].includes(call.action))).toBe(false);
+  await page.getByRole('button', { name: 'Fechar', exact: true }).click();
+  await page.setViewportSize({ width: 1536, height: 1100 });
+  await page.screenshot({ path: 'test-results/company-briefing-desktop.png', fullPage: true });
+  const heights = await page
+    .locator('.briefing-board')
+    .evaluateAll((items) => items.map((item) => item.getBoundingClientRect().height));
+  expect(Math.max(...heights) - Math.min(...heights)).toBeLessThan(2);
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
 });
 test('saved versions stay visibly historical and answer user questions', async ({ page }) => {
   await fixture(page);
