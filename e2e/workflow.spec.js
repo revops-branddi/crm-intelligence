@@ -60,9 +60,11 @@ function answer(mode, question = '') {
 }
 async function fixture(
   page,
-  { connected = true, failAnalysis = false, cached = false, coreFirst = false } = {},
+  { connected = true, failAnalysis = false, cached = false, coreFirst = false, rich = false } = {},
 ) {
   const calls = [];
+  const cachedAnswer = answer('overview');
+  if (rich) cachedAnswer.answer.sections = richSections();
   let isConnected = connected,
     steps = 0;
   await page.addInitScript(() => {
@@ -108,9 +110,7 @@ async function fixture(
         body = { connected: false };
         break;
       case 'latest':
-        body = cached
-          ? { snapshot, answers: [answer('overview')] }
-          : { snapshot: null, answers: [] };
+        body = cached ? { snapshot, answers: [cachedAnswer] } : { snapshot: null, answers: [] };
         break;
       case 'start':
         body = {
@@ -177,6 +177,19 @@ async function fixture(
       case 'text':
         body = { text: source.text, totalCharacters: source.text.length, nextOffset: null };
         break;
+      case 'materials':
+        body = {
+          materials: [
+            {
+              title: 'Relatório Brand Bidding',
+              url: 'https://report.branddi.com/report/teste',
+              sourceId: source.id,
+              quote: source.text,
+              date: source.date,
+            },
+          ],
+        };
+        break;
       case 'source':
         body = { source };
         break;
@@ -211,11 +224,15 @@ test('connects without persisting token and extracts before analyzing with evide
   await page.getByLabel('ID do negócio').fill('7');
   await page.getByRole('button', { name: 'Analisar negócio', exact: true }).click();
   await expect(page.getByText('20 etapas preservadas', { exact: false })).toBeVisible();
-  await expect(page.getByText('A reunião foi confirmada pelo cliente.')).toBeVisible();
+  await expect(
+    page.locator('.briefing-grid').getByText('A reunião foi confirmada pelo cliente.'),
+  ).toBeVisible();
   expect(calls.some((call) => call.action === 'answer' && call.mode === 'overview')).toBe(true);
   expect(await page.evaluate(() => localStorage.getItem('pipedriveToken'))).toBeNull();
   await page.getByRole('button', { name: 'Gerar briefing', exact: true }).click();
-  await expect(page.getByText('A reunião foi confirmada pelo cliente.')).toBeVisible();
+  await expect(
+    page.locator('.briefing-grid').getByText('A reunião foi confirmada pelo cliente.'),
+  ).toBeVisible();
   await page.getByRole('button', { name: 'Abrir fonte', exact: false }).click();
   await expect(page.getByRole('dialog')).toContainText(source.text);
   await page.getByRole('button', { name: 'Fechar', exact: true }).click();
@@ -268,7 +285,9 @@ test('opens a saved analysis without another extraction or model call', async ({
   const calls = await fixture(page, { cached: true });
   await page.getByLabel('ID do negócio').fill('7');
   await page.getByRole('button', { name: 'Analisar negócio', exact: true }).click();
-  await expect(page.getByText('A reunião foi confirmada pelo cliente.')).toBeVisible();
+  await expect(
+    page.locator('.briefing-grid').getByText('A reunião foi confirmada pelo cliente.'),
+  ).toBeVisible();
   expect(calls.some((call) => ['start', 'step', 'answer'].includes(call.action))).toBe(false);
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({ path: 'test-results/crm-overview-desktop.png', fullPage: false });
@@ -277,7 +296,9 @@ test('generates an automatic result before collecting remaining attachments', as
   const calls = await fixture(page, { coreFirst: true });
   await page.getByLabel('ID do negócio').fill('7');
   await page.getByRole('button', { name: 'Analisar negócio', exact: true }).click();
-  await expect(page.getByText('A reunião foi confirmada pelo cliente.')).toBeVisible();
+  await expect(
+    page.locator('.briefing-grid').getByText('A reunião foi confirmada pelo cliente.'),
+  ).toBeVisible();
   await expect(page.getByText('Coleta finalizada.', { exact: false })).toBeVisible();
   const actions = calls
     .filter((call) => ['step', 'answer'].includes(call.action))
@@ -293,4 +314,127 @@ test('connection and navigation remain usable on a narrow screen', async ({ page
     true,
   );
   await page.screenshot({ path: 'test-results/crm-connection-mobile.png', fullPage: true });
+});
+
+function richSections() {
+  const titles = [
+    'Empresa e grupo',
+    'Pessoas e papéis',
+    'Histórico comercial',
+    'Diagnóstico e oportunidade',
+    'Abordagem e próximos passos',
+    'Reunião e materiais',
+  ];
+  const categories = ['company', 'people', 'history', 'opportunity', 'approach', 'meeting'];
+  const texts = [
+    [
+      'Empresa de varejo com presença nacional e operação digital. O registro cita um grupo econômico; confirme a relação entre as marcas antes de estender o escopo.',
+      'A marca e o domínio foram registrados no CRM. A abrangência sobre outras unidades ainda precisa ser validada.',
+    ],
+    [
+      'O cargo diverge entre o cadastro e a assinatura do e-mail. Confirme a função e a abrangência do contato sobre as marcas do grupo.',
+      'Existem contatos de marketing e e-commerce vinculados à organização. O cadastro não comprova participação na decisão.',
+    ],
+    [
+      'O contato respondeu à abordagem e demonstrou interesse em conhecer o diagnóstico. A resposta foi registrada no histórico.',
+      'Há uma recusa antiga de outro contato. Respeite o contexto e confirme se houve mudança de cenário.',
+    ],
+    [
+      'A monitoria registra anunciantes associados aos termos de marca. Verifique se são concorrentes, afiliados ou empresas do grupo.',
+      'A economia indicada no relatório é uma estimativa, sem comprovação de perda declarada pelo cliente.',
+    ],
+    [
+      'Apresente o diagnóstico mais recente e pergunte como o contato acompanha o tema hoje. Confirme quais decisões estão no seu escopo.',
+      'O relatório diverge da nota comercial quanto ao número de anunciantes; compare as datas e os termos monitorados.',
+    ],
+    [
+      'O convite registra uma reunião para a próxima semana. O envio do convite não confirma o aceite dos participantes.',
+      'Há um link de apresentação no card e uma atividade de preparação em aberto. O link não prova que o material foi revisado.',
+    ],
+  ];
+  return titles.map((title, i) => ({
+    title,
+    claims: [...texts[i], 'Conclusão adicional preservada para leitura no painel lateral.'].map(
+      (text, j) => ({
+        text,
+        category: categories[i],
+        kind: i === 4 && j === 0 ? 'recommendation' : 'fact',
+        citations: [{ sourceId: source.id, quote: source.text }],
+      }),
+    ),
+  }));
+}
+
+test('Briefing 360 keeps six symmetric boards, preserves details and switches modes without generating', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1536, height: 1100 });
+  const calls = await fixture(page, { cached: true, rich: true });
+  await page.getByLabel('ID do negócio').fill('7');
+  await page.getByRole('button', { name: 'Analisar negócio', exact: true }).click();
+  const cards = page.locator('.briefing-board');
+  await expect(cards).toHaveCount(6);
+  const rectangles = await cards.evaluateAll((items) =>
+    items.map((el) => {
+      const r = el.getBoundingClientRect();
+      return { x: r.x, y: r.y, width: r.width, height: r.height };
+    }),
+  );
+  expect(
+    Math.max(...rectangles.map((r) => r.width)) - Math.min(...rectangles.map((r) => r.width)),
+  ).toBeLessThan(2);
+  expect(
+    Math.max(...rectangles.map((r) => r.height)) - Math.min(...rectangles.map((r) => r.height)),
+  ).toBeLessThan(2);
+  expect(rectangles[0].y).toBe(rectangles[2].y);
+  await page.screenshot({ path: 'test-results/briefing-360-desktop.png', fullPage: true });
+  await page.getByRole('button', { name: 'Ver quadro completo' }).first().click();
+  await expect(page.getByRole('dialog')).toContainText('Conclusão adicional preservada');
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Pré-prospecção', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Pré-prospecção', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  expect(calls.some((call) => call.action === 'answer')).toBe(false);
+  await page.getByRole('button', { name: 'Revisar preparação' }).click();
+  await page.getByRole('checkbox').first().check();
+  await page.getByRole('button', { name: 'Fechar painel' }).click();
+  await page.getByRole('button', { name: 'Perguntas', exact: true }).click();
+  await page.getByRole('button', { name: 'Briefing 360', exact: true }).click();
+  await page.getByRole('button', { name: 'Revisar preparação' }).click();
+  await expect(page.getByRole('checkbox').first()).toBeChecked();
+  await page.getByRole('button', { name: 'Fechar painel' }).click();
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await expect(cards).toHaveCount(6);
+  await page.screenshot({ path: 'test-results/briefing-360-mobile.png', fullPage: true });
+});
+
+test('reviews one occurrence at a time and hands an editable draft to the canonical Hub flow', async ({
+  page,
+}) => {
+  await fixture(page, { cached: true, rich: true });
+  await page.getByLabel('ID do negócio').fill('7');
+  await page.getByRole('button', { name: 'Analisar negócio', exact: true }).click();
+  await page.getByRole('button', { name: 'Pendências e erros' }).click();
+  await expect(page.getByText('2 a validar', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Revisar ocorrência' }).first().click();
+  await page.getByLabel('Título', { exact: true }).fill('Verificar cargo do contato');
+  const link = page.getByRole('link', { name: 'Revisar e continuar no Hub' });
+  const url = new URL(await link.getAttribute('href'));
+  expect(url.origin).toBe('https://revops.branddi.com');
+  expect(url.pathname).toBe('/operacao/central-revops/helpdesk/novo');
+  expect(url.searchParams.get('texto')).toContain('Verificar cargo do contato');
+  expect(url.searchParams.get('texto')).not.toContain('relatório diverge');
+  await page.getByRole('button', { name: 'Não é erro', exact: true }).click();
+  await expect(page.getByText('1 a validar', { exact: true })).toBeVisible();
+  await expect(page.locator('.review-list').getByText('A validar', { exact: true })).toHaveCount(1);
+  await page.getByRole('button', { name: 'Relatórios e materiais', exact: true }).click();
+  await expect(page.getByRole('link', { name: 'Abrir material' })).toHaveAttribute(
+    'href',
+    'https://report.branddi.com/report/teste',
+  );
+  await expect(page.getByText('Link registrado · a verificar', { exact: true })).toBeVisible();
 });
