@@ -7,6 +7,7 @@ import { allPages, ownedSnapshot, publicSnapshot } from './store.js';
 import { buildSources } from './sources.js';
 import { dealDetails } from './deal-details.js';
 import { generateAnswer } from './analysis.js';
+import { analysisConfiguration } from './llm-provider.js';
 
 const uuid = z.string().uuid();
 const inputSchema = z.discriminatedUnion('action', [
@@ -76,8 +77,7 @@ export async function handleAction(
     );
     return {
       connection,
-      model: env.GEMINI_MODEL || null,
-      analysisConfigured: Boolean(env.GEMINI_MODEL && env.GEMINI_API_KEY),
+      ...analysisConfiguration(env),
     };
   }
   if (input.action === 'connect') {

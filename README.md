@@ -38,18 +38,20 @@ Vite encaminha `/api` exclusivamente para `127.0.0.1:3001`. O desenvolvimento n�
 
 ### Variáveis
 
-| Variável | Uso |
-| --- | --- |
-| `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` | Configuração pública do login no frontend |
-| `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` | Servidor, acesso ao banco e validação da sessão |
-| `CREDENTIAL_ENCRYPTION_KEY` | Chave base64 de exatamente 32 bytes; exclusiva do servidor |
-| `AUTH_ALLOWED_DOMAINS` | Domínios de e-mail permitidos, separados por vírgula |
-| `AUTH_ALLOWED_EMAILS` | Contas específicas permitidas, separadas por vírgula |
-| `GEMINI_API_KEY` / `GEMINI_MODEL` | Chave e identificador de modelo, definidos pelo administrador |
-| `AI_REQUESTS_PER_USER_DAY` | Máximo de gerações por usuário/dia, padrão 30 |
-| `AI_REQUESTS_GLOBAL_DAY` | Máximo de gerações da aplicação/dia, padrão 300 |
+| Variável                                       | Uso                                                                             |
+| ---------------------------------------------- | ------------------------------------------------------------------------------- |
+| `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` | Configuração pública do login no frontend                                       |
+| `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY`   | Servidor, acesso ao banco e validação da sessão                                 |
+| `CREDENTIAL_ENCRYPTION_KEY`                    | Chave base64 de exatamente 32 bytes; exclusiva do servidor                      |
+| `AUTH_ALLOWED_DOMAINS`                         | Domínios de e-mail permitidos, separados por vírgula                            |
+| `AUTH_ALLOWED_EMAILS`                          | Contas específicas permitidas, separadas por vírgula                            |
+| `LLM_PROVIDER`                                 | `superproxy` em produção; `gemini` somente para reversão explícita              |
+| `SUPERPROXY_API_KEY` / `SUPERPROXY_MODEL`      | Credencial privada do cliente crmintelligence e modelo disponível no Superproxy |
+| `GEMINI_API_KEY` / `GEMINI_MODEL`              | Configuração legada, usada apenas com provedor Gemini selecionado               |
+| `AI_REQUESTS_PER_USER_DAY`                     | Máximo de gerações por usuário/dia, padrão 30                                   |
+| `AI_REQUESTS_GLOBAL_DAY`                       | Máximo de gerações da aplicação/dia, padrão 300                                 |
 
-É necessário configurar pelo menos uma lista de domínios ou contas. A aplicação falha de forma fechada quando faltam autenticação, criptografia ou controles de uso. A disponibilidade de um modelo depende do projeto Google; confirme o identificador antes de ativar. Não há seleção livre de modelo pelo navegador.
+É necessário configurar pelo menos uma lista de domínios ou contas. A aplicação falha de forma fechada quando faltam autenticação, criptografia ou controles de uso. O Superproxy usa a API Messages em `https://branddi-super-proxy.fly.dev/v1/messages`. Confirme o modelo em `/v1/models` com a versão Anthropic `2023-06-01` antes de ativar. Não há fallback automático entre provedores. As respostas continuam sujeitas à validação local de estrutura e citações; respostas interrompidas não são salvas. No Superproxy, uma conclusão com citação inválida é removida por inteiro e a análise salva informa a quantidade removida; se nenhuma conclusão tiver evidência válida, a resposta é rejeitada. Não há seleção livre de modelo pelo navegador.
 
 Para gerar a chave de criptografia, em um terminal privado:
 

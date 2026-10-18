@@ -772,6 +772,7 @@ function Workspace({ user, logout }) {
                               </div>
                             )}
                             <p className="mt-3 text-xs text-slate-500">
+                              {configuration.provider === 'superproxy' ? 'Superproxy · ' : ''}
                               Modelo: {configuration.model || 'não configurado'}. A análise usa a
                               versão coletada em{' '}
                               {date(
