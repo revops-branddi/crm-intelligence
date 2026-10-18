@@ -74,9 +74,12 @@ function DetailSheet({ title, subtitle, onClose, children }) {
 }
 
 function Claim({ claim, onSource, compact = false }) {
+  const sourceCount = new Set(claim.citations.map((ref) => ref.sourceId)).size;
   return (
     <article className={`briefing-claim ${compact ? 'compact' : ''}`}>
-      <span className={`claim-kind ${claim.kind}`}>{claimLabels[claim.kind]}</span>
+      <span className={`claim-kind ${claim.kind}`}>
+        {claim.attribution || claimLabels[claim.kind]}
+      </span>
       <p>{claim.text}</p>
       {compact ? (
         <button
@@ -84,8 +87,7 @@ function Claim({ claim, onSource, compact = false }) {
           onClick={() => onSource(claim.citations[0].sourceId, claim.citations[0].quote)}
           aria-label={`Abrir fonte: ${claim.text}`}
         >
-          <FileSearch size={13} /> {claim.citations.length}{' '}
-          {claim.citations.length === 1 ? 'fonte' : 'fontes'}
+          <FileSearch size={13} /> {sourceCount} {sourceCount === 1 ? 'fonte' : 'fontes'}
         </button>
       ) : (
         <div className="claim-evidence">
@@ -221,7 +223,26 @@ export function BriefingDashboard({
   onSessionState,
 }) {
   const [view, setView] = useState('briefing'),
-    [sheet, setSheet] = useState(null);
+    [sheet, setSheet] = useState(null),
+    [company, setCompany] = useState(null),
+    [companyError, setCompanyError] = useState(''),
+    [companyRetry, setCompanyRetry] = useState(0);
+  useEffect(() => {
+    let active = true;
+    apiRequest('company', { snapshotId: snapshot.id })
+      .then((result) => {
+        if (active) {
+          setCompany(result);
+          setCompanyError('');
+        }
+      })
+      .catch((error) => {
+        if (active) setCompanyError(error.message);
+      });
+    return () => {
+      active = false;
+    };
+  }, [snapshot.id, companyRetry]);
   const { checks = {}, reviews = {}, drafts = {} } = sessionState || {};
   const setChecks = (update) =>
     onSessionState((previous) => ({ ...previous, checks: update(previous.checks || {}) }));
@@ -229,7 +250,7 @@ export function BriefingDashboard({
     onSessionState((previous) => ({ ...previous, reviews: update(previous.reviews || {}) }));
   const setDrafts = (update) =>
     onSessionState((previous) => ({ ...previous, drafts: update(previous.drafts || {}) }));
-  const boards = organizeBriefing(record);
+  const boards = organizeBriefing(record, company);
   const items = reviewItems(record);
   const claims = boards.flatMap((board) => board.claims);
   const pending = items.filter((item) => !reviews[item.id]);
@@ -283,7 +304,7 @@ export function BriefingDashboard({
         </span>
         <span>
           {record
-            ? `${claims.length} conclusões · ${record.context_manifest?.selectedChunks ?? '—'}/${record.context_manifest?.totalChunks ?? '—'} trechos consultados`
+            ? `${claims.filter((claim) => !claim.origin).length} conclusões da análise · ${record.context_manifest?.selectedChunks ?? '—'}/${record.context_manifest?.totalChunks ?? '—'} trechos consultados`
             : 'Análise ainda não gerada'}
         </span>
         {!!snapshot.pendingAttachments && (
@@ -370,8 +391,8 @@ export function BriefingDashboard({
             <div className="briefing-actions">
               <button
                 className="text-action"
-                disabled={!record}
-                onClick={() => onCopy(answerText(record))}
+                disabled={!record && !company?.facts.length}
+                onClick={() => onCopy(answerText(record, company))}
               >
                 <Copy size={14} /> Copiar com fontes
               </button>
@@ -409,26 +430,52 @@ export function BriefingDashboard({
                     <span className="board-number">0{index + 1}</span>
                   </header>
                   <div className="board-preview">
-                    {board.claims.length ? (
-                      board.claims
-                        .slice(0, 2)
-                        .map((claim) => (
-                          <Claim key={claim.key} claim={claim} compact onSource={source} />
-                        ))
-                    ) : (
-                      <div className="board-empty">
-                        <FileSearch size={22} />
-                        <strong>Sem conclusão nesta análise</strong>
-                        <p>Isso não significa que a informação não exista no CRM.</p>
-                        <button className="text-action" onClick={() => ask(board.questions[0])}>
-                          Investigar este assunto <ChevronRight size={14} />
-                        </button>
-                      </div>
+                    {board.id === 'company' && !company && (
+                      <p className="briefing-muted" role={companyError ? 'alert' : 'status'}>
+                        {companyError ? (
+                          <>
+                            Não foi possível ler os dados da empresa.{' '}
+                            <button
+                              className="text-action"
+                              onClick={() => setCompanyRetry((value) => value + 1)}
+                            >
+                              Tentar novamente
+                            </button>
+                          </>
+                        ) : (
+                          'Lendo dados registrados da empresa…'
+                        )}
+                      </p>
                     )}
+                    {board.claims.length
+                      ? board.claims
+                          .slice(0, 2)
+                          .map((claim) => (
+                            <Claim key={claim.key} claim={claim} compact onSource={source} />
+                          ))
+                      : (board.id !== 'company' || company) && (
+                          <div className="board-empty">
+                            <FileSearch size={22} />
+                            <strong>
+                              {board.id === 'company'
+                                ? 'Sem dados identificados nesta versão'
+                                : 'Sem conclusão nesta análise'}
+                            </strong>
+                            <p>Isso não significa que a informação não exista no CRM.</p>
+                            <button className="text-action" onClick={() => ask(board.questions[0])}>
+                              Investigar este assunto <ChevronRight size={14} />
+                            </button>
+                          </div>
+                        )}
                   </div>
                   <footer>
                     <span>
-                      {board.claims.length} {board.claims.length === 1 ? 'conclusão' : 'conclusões'}
+                      {board.claims.length}{' '}
+                      {board.id === 'company'
+                        ? 'itens'
+                        : board.claims.length === 1
+                          ? 'conclusão'
+                          : 'conclusões'}
                     </span>
                     <button
                       className="text-action"
@@ -582,6 +629,23 @@ export function BriefingDashboard({
           subtitle={selectedBoard.subtitle}
           onClose={() => setSheet(null)}
         >
+          {selectedBoard.id === 'company' && company && (
+            <div className="briefing-note">
+              <strong>
+                {company.organizationId
+                  ? `Organização #${company.organizationId}`
+                  : 'Organização não identificada'}
+              </strong>
+              <p>
+                O cadastro da organização é a base comum dos cards vinculados ao mesmo ID. Notas são
+                evidências deste card; produto, diagnóstico e negociação permanecem separados. Dados
+                da versão preservada, sem alterar o CRM.
+              </p>
+              {company.warnings.map((warning) => (
+                <p key={warning}>{warning}</p>
+              ))}
+            </div>
+          )}
           <div className="sheet-claims">
             {selectedBoard.claims.map((claim) => (
               <Claim key={claim.key} claim={claim} onSource={source} />

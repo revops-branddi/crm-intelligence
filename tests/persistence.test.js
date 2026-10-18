@@ -201,6 +201,52 @@ test('analysis database failure propagates and never reports success', async () 
   assert.equal(db.tables.crm_answers.length, 0);
 });
 
+test('company projection uses only owned snapshot data and rechecks current deal visibility', async () => {
+  const snapshot = { ...state({}), status: 'complete', pending: [] };
+  const db = connectedDb(snapshot);
+  db.tables.crm_raw_pages = [
+    {
+      snapshot_id: id,
+      task_key: 'a'.repeat(64),
+      kind: 'deal',
+      payload: { data: { id: 7, org_id: 250 } },
+    },
+    {
+      snapshot_id: id,
+      task_key: 'b'.repeat(64),
+      kind: 'organization',
+      payload: { data: { id: 250, name: 'Lume' } },
+    },
+    {
+      snapshot_id: 'other',
+      task_key: 'c'.repeat(64),
+      kind: 'organization',
+      payload: { data: { id: 250, name: 'Do not leak' } },
+    },
+  ];
+  const input = { action: 'company', snapshotId: id };
+  const context = { db, user, env, clientFactory: () => ({ get: async () => ({ data: deal }) }) };
+  const result = await handleAction(input, context);
+  assert.equal(result.organizationId, '250');
+  assert.match(JSON.stringify(result.facts), /Lume/);
+  assert.doesNotMatch(JSON.stringify(result.facts), /Do not leak/);
+  db.tables.crm_snapshots[0].user_id = 'other';
+  await assert.rejects(() => handleAction(input, context), (error) => error.status === 404);
+  db.tables.crm_snapshots[0].user_id = user.id;
+  await assert.rejects(
+    () =>
+      handleAction(input, {
+        ...context,
+        clientFactory: () => ({
+          get: async () => {
+            throw new HttpError(403, 'Revoked');
+          },
+        }),
+      }),
+    (error) => error.status === 403,
+  );
+});
+
 test('oversized pages shrink without skipping the cursor or recording false completion', async () => {
   const task = {
     kind: 'notes',
