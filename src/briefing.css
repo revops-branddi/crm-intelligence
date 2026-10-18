@@ -981,13 +981,48 @@
   min-height: 0;
 }
 .board-preview {
-  min-height: 256px;
+  min-height: 176px;
 }
 .briefing-claim.compact {
-  min-height: 128px;
+  min-height: 88px;
   padding-block: 11px;
 }
 .briefing-claim.compact > p {
   line-height: 1.55;
   margin-block: 6px;
+}
+
+/* One reading surface; supporting data stays available outside the briefing. */
+.briefing-questions {
+  scroll-margin-top: 24px;
+}
+.briefing-questions > h2 {
+  font-size: 18px;
+  font-weight: 650;
+  color: #143746;
+}
+.technical-data {
+  border-top: 1px solid #dce6e9;
+  padding-top: 16px;
+}
+.technical-data > summary {
+  font-size: 12px;
+  color: #647b87;
+  cursor: pointer;
+}
+.technical-data[open] > summary {
+  margin-bottom: 16px;
+}
+.sheet-claims .briefing-claim {
+  padding-block: 9px;
+}
+.sheet-claims .briefing-claim > p {
+  margin-block: 3px;
+}
+.sheet-checks > summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.answer-claim {
+  padding-top: 12px;
 }

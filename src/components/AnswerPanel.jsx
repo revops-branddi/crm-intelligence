@@ -1,6 +1,6 @@
 import { Copy, FileSearch } from 'lucide-react';
 const labels = { fact: 'Fato registrado', inference: 'Inferência', recommendation: 'Recomendação' };
-export function AnswerPanel({ record, onSource, onCopy }) {
+export function AnswerPanel({ record, onCopy }) {
   if (!record)
     return (
       <div className="card empty-state">
@@ -42,41 +42,22 @@ export function AnswerPanel({ record, onSource, onCopy }) {
           <div className="space-y-5">
             {section.claims.map((claim, i) => (
               <article className="answer-claim" key={i}>
-                <span
-                  className={`text-xs font-bold ${claim.kind === 'fact' ? 'text-emerald-700' : claim.kind === 'inference' ? 'text-amber-700' : 'text-indigo-700'}`}
-                >
-                  {labels[claim.kind]}
-                </span>
+                {claim.kind !== 'fact' && <span className="claim-kind">{labels[claim.kind]}</span>}
                 <p className="text-sm text-slate-700 whitespace-pre-wrap mt-1">{claim.text}</p>
-                <div className="mt-2 space-y-2">
-                  {claim.citations.map((ref, j) => (
-                    <button
-                      onClick={() => onSource(ref.sourceId)}
-                      key={j}
-                      className="block w-full text-left text-xs bg-slate-50 border border-slate-200 rounded-lg p-3 hover:border-branddi-cyan"
-                    >
-                      <span className="flex gap-2 text-branddi-navy font-semibold">
-                        <FileSearch size={14} />
-                        Abrir fonte
-                      </span>
-                      <q className="block text-slate-600 mt-1 whitespace-pre-wrap">{ref.quote}</q>
-                    </button>
-                  ))}
-                </div>
               </article>
             ))}
           </div>
         </section>
       ))}
       {!!answer.gaps.length && (
-        <section className="rounded-xl bg-amber-50 border border-amber-200 p-5">
-          <h2 className="font-bold text-amber-900">Lacunas e limites da resposta</h2>
+        <details className="coverage-details">
+          <summary>Pontos a conferir ({answer.gaps.length})</summary>
           <ul className="mt-2 list-disc pl-5 space-y-2 text-sm text-amber-900">
             {answer.gaps.map((gap, i) => (
               <li key={i}>{gap}</li>
             ))}
           </ul>
-        </section>
+        </details>
       )}
       {!!answer.suggestedQuestions.length && (
         <section className="card p-5">

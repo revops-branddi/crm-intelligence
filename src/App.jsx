@@ -1,8 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   Zap,
-  Database,
-  MessageSquare,
   Search,
   RefreshCw,
   Loader2,
@@ -19,7 +17,6 @@ import { useAuth } from './hooks/useAuth';
 import { apiRequest } from './services/api';
 import { LoginScreen } from './components/ui/LoginScreen';
 import { AnswerPanel } from './components/AnswerPanel';
-import { DealDetails } from './components/DealDetails';
 import { EvidencePanel } from './components/EvidencePanel';
 import { BriefingDashboard } from './components/BriefingDashboard';
 import {
@@ -39,13 +36,6 @@ const statusLabel = {
   partial: 'Coleta com lacunas',
   cancelled: 'Cancelada',
 };
-const tabs = [
-  ['overview', 'Briefing 360', LayoutDashboard],
-  ['question', 'Perguntas', MessageSquare],
-  ['details', 'Empresa e pessoas', FolderOpen],
-  ['timeline', 'Histórico', RefreshCw],
-  ['sources', 'Dados e fontes', Database],
-];
 function delay(ms, signal) {
   return new Promise((resolve, reject) => {
     if (signal.aborted) return reject(new DOMException('Paused', 'AbortError'));
@@ -266,8 +256,8 @@ function Workspace({ user, logout }) {
       if (mounted.current) {
         setAnswers((previous) => [result.answer, ...previous]);
         setSelectedAnswer(result.answer);
-        setTab(mode);
-        setNotice('Análise pronta. Consulte as conclusões e abra as fontes para conferir.');
+        if (mode !== 'question') setTab(mode);
+        setNotice(mode === 'question' ? 'Resposta pronta.' : 'Briefing atualizado.');
         return true;
       }
     } catch (error) {
@@ -287,7 +277,6 @@ function Workspace({ user, logout }) {
     setError('');
     try {
       setSourceData(await apiRequest('sources', { snapshotId: snapshot.id }));
-      setTab('sources');
     } catch (error) {
       setError(error.message);
     } finally {
@@ -314,7 +303,9 @@ function Workspace({ user, logout }) {
   const ready =
     snapshot && (snapshot.analysisReady || ['complete', 'partial'].includes(snapshot.status));
   const currentAnswer =
-    selectedAnswer?.mode === tab ? selectedAnswer : answers.find((answer) => answer.mode === tab);
+    selectedAnswer?.mode === 'question'
+      ? selectedAnswer
+      : answers.find((answer) => answer.mode === 'question');
   return (
     <div className={`app-shell ${snapshot && page === 'home' ? 'has-deal' : ''}`}>
       <aside className="app-sidebar">
@@ -641,11 +632,6 @@ function Workspace({ user, logout }) {
                         </button>
                       )}
                     </div>
-                    <p className="text-xs text-slate-500 mt-3">
-                      {snapshot.completed_tasks} etapas preservadas · {snapshot.remainingTasks}{' '}
-                      pendentes
-                      {snapshot.last_resource ? ` · Último recurso: ${snapshot.last_resource}` : ''}
-                    </p>
                     {busy === 'extracting' && (
                       <p className="flex gap-2 mt-3 text-sm text-branddi-navy" role="status">
                         <Loader2 size={18} className="animate-spin" />
@@ -654,21 +640,29 @@ function Workspace({ user, logout }) {
                           : 'Reunindo o texto do negócio, histórico, pessoas e e-mails…'}
                       </p>
                     )}
-                    <div className="snapshot-metrics">
-                      {[
-                        ['Dias no ciclo', snapshot.metrics?.daysOpen],
-                        ['Dias sem contato registrado', snapshot.metrics?.daysInactive],
-                        ['Contatos registrados', snapshot.metrics?.totalActions],
-                        ['Atividades pendentes', snapshot.metrics?.pendingActivities],
-                      ].map(([label, value]) => (
-                        <div key={label}>
-                          <span>{label}</span>
-                          <strong>{value ?? '—'}</strong>
-                        </div>
-                      ))}
-                    </div>
                     <details className="snapshot-coverage">
                       <summary>Detalhes e limites da coleta</summary>
+                      <p className="text-xs text-slate-500 mt-3">
+                        {snapshot.completed_tasks} etapas preservadas · {snapshot.remainingTasks}{' '}
+                        pendentes
+                        {snapshot.last_resource
+                          ? ` · Último recurso: ${snapshot.last_resource}`
+                          : ''}
+                      </p>
+                      <div className="snapshot-metrics">
+                        {[
+                          ['Dias no ciclo', snapshot.metrics?.daysOpen],
+                          ['Dias sem contato registrado', snapshot.metrics?.daysInactive],
+                          ['Contatos registrados', snapshot.metrics?.totalActions],
+                          ['Atividades pendentes', snapshot.metrics?.pendingActivities],
+                        ].map(([label, value]) => (
+                          <div key={label}>
+                            <span>{label}</span>
+                            <strong>{value ?? '—'}</strong>
+                          </div>
+                        ))}
+                      </div>
+
                       <p>
                         {snapshot.metrics?.contactDefinition} Métricas calculadas em{' '}
                         {date(snapshot.metrics?.referenceAt)}.
@@ -684,158 +678,120 @@ function Workspace({ user, logout }) {
                   </section>
                   {ready && (
                     <>
-                      <nav className="deal-tabs" aria-label="Visões do negócio">
-                        {tabs.map(([id, label, Icon]) => (
-                          <button
-                            disabled={!!busy}
-                            key={id}
-                            onClick={() =>
-                              id === 'sources'
-                                ? viewSources()
-                                : (setTab(id), setSelectedAnswer(null))
-                            }
-                            aria-current={
-                              tab === id ||
-                              (id === 'overview' && ['briefing', 'prospecting'].includes(tab))
-                                ? 'page'
-                                : undefined
-                            }
-                            className={
-                              tab === id ||
-                              (id === 'overview' && ['briefing', 'prospecting'].includes(tab))
-                                ? 'active'
-                                : ''
+                      <BriefingDashboard
+                        key={snapshot.id}
+                        snapshot={snapshot}
+                        records={answers}
+                        sessionState={briefingStates[snapshot.id]}
+                        onSessionState={(update) =>
+                          setBriefingStates((previous) => ({
+                            ...previous,
+                            [snapshot.id]: update(previous[snapshot.id] || {}),
+                          }))
+                        }
+                        mode={tab === 'prospecting' ? 'prospecting' : 'briefing'}
+                        record={
+                          selectedAnswer &&
+                          selectedAnswer.mode ===
+                            (tab === 'prospecting' ? 'prospecting' : 'briefing')
+                            ? selectedAnswer
+                            : answers.find(
+                                (answer) =>
+                                  answer.mode ===
+                                  (tab === 'prospecting' ? 'prospecting' : 'briefing'),
+                              ) ||
+                              answers.find((answer) => answer.mode === 'overview') ||
+                              answers.find((answer) =>
+                                ['briefing', 'prospecting'].includes(answer.mode),
+                              )
+                        }
+                        onMode={(mode) => {
+                          setTab(mode);
+                          setSelectedAnswer(null);
+                        }}
+                        onSelect={setSelectedAnswer}
+                        onGenerate={analyze}
+                        onSource={openSource}
+                        onCopy={copy}
+                        onAsk={(text) => {
+                          setQuestion(text);
+                          setSelectedAnswer(null);
+                          requestAnimationFrame(() => document.getElementById('question')?.focus());
+                        }}
+                        configuration={configuration}
+                        busy={Boolean(busy)}
+                      />
+                      <section
+                        className="briefing-questions space-y-5"
+                        aria-label="Perguntas sobre o briefing"
+                      >
+                        <h2>Perguntas sobre o briefing</h2>
+                        <section className="card p-5">
+                          <form
+                            onSubmit={(event) => {
+                              event.preventDefault();
+                              void analyze('question');
+                            }}
+                            className="space-y-3"
+                          >
+                            <label htmlFor="question" className="block font-semibold">
+                              O que você precisa saber sobre este negócio?
+                            </label>
+                            <textarea
+                              id="question"
+                              className="input w-full min-h-24"
+                              maxLength={2000}
+                              value={question}
+                              onChange={(event) => setQuestion(event.target.value)}
+                              placeholder="Qual foi o último compromisso assumido pelo cliente e onde isso está registrado?"
+                              required
+                            />
+                            <button
+                              className="primary"
+                              disabled={!!busy || !configuration.analysisConfigured}
+                            >
+                              Perguntar
+                            </button>
+                          </form>
+                        </section>
+                        {answers.filter((answer) => answer.mode === 'question').length > 1 && (
+                          <select
+                            aria-label="Respostas anteriores"
+                            className="input max-w-full"
+                            value={currentAnswer?.id || ''}
+                            onChange={(event) =>
+                              setSelectedAnswer(
+                                answers.find((answer) => answer.id === event.target.value),
+                              )
                             }
                           >
-                            <Icon size={16} />
-                            {label}
+                            {answers
+                              .filter((answer) => answer.mode === 'question')
+                              .map((answer) => (
+                                <option key={answer.id} value={answer.id}>
+                                  {date(answer.created_at)} · {answer.question}
+                                </option>
+                              ))}
+                          </select>
+                        )}
+                        {currentAnswer && <AnswerPanel record={currentAnswer} onCopy={copy} />}
+                      </section>
+                      <details className="technical-data" key={`technical:${snapshot.id}`}>
+                        <summary>Consulta técnica · dados preservados</summary>
+                        {!sourceData && (
+                          <button className="secondary" disabled={!!busy} onClick={viewSources}>
+                            Carregar dados e fontes
                           </button>
-                        ))}
-                      </nav>
-                      {['overview', 'briefing', 'prospecting'].includes(tab) && (
-                        <BriefingDashboard
-                          key={snapshot.id}
-                          snapshot={snapshot}
-                          records={answers}
-                          sessionState={briefingStates[snapshot.id]}
-                          onSessionState={(update) =>
-                            setBriefingStates((previous) => ({
-                              ...previous,
-                              [snapshot.id]: update(previous[snapshot.id] || {}),
-                            }))
-                          }
-                          mode={tab === 'prospecting' ? 'prospecting' : 'briefing'}
-                          record={
-                            selectedAnswer &&
-                            selectedAnswer.mode ===
-                              (tab === 'prospecting' ? 'prospecting' : 'briefing')
-                              ? selectedAnswer
-                              : answers.find(
-                                  (answer) =>
-                                    answer.mode ===
-                                    (tab === 'prospecting' ? 'prospecting' : 'briefing'),
-                                ) ||
-                                answers.find((answer) => answer.mode === 'overview') ||
-                                answers.find((answer) =>
-                                  ['briefing', 'prospecting'].includes(answer.mode),
-                                )
-                          }
-                          onMode={(mode) => {
-                            setTab(mode);
-                            setSelectedAnswer(null);
-                          }}
-                          onSelect={setSelectedAnswer}
-                          onGenerate={analyze}
-                          onSource={openSource}
-                          onCopy={copy}
-                          onAsk={(text) => {
-                            setQuestion(text);
-                            setSelectedAnswer(null);
-                            setTab('question');
-                          }}
-                          configuration={configuration}
-                          busy={Boolean(busy)}
-                        />
-                      )}
-                      {tab === 'question' && (
-                        <div className="space-y-5">
-                          <section className="card p-5">
-                            <form
-                              onSubmit={(event) => {
-                                event.preventDefault();
-                                void analyze('question');
-                              }}
-                              className="space-y-3"
-                            >
-                              <label htmlFor="question" className="block font-semibold">
-                                O que você precisa saber sobre este negócio?
-                              </label>
-                              <textarea
-                                id="question"
-                                className="input w-full min-h-24"
-                                maxLength={2000}
-                                value={question}
-                                onChange={(event) => setQuestion(event.target.value)}
-                                placeholder="Qual foi o último compromisso assumido pelo cliente e onde isso está registrado?"
-                                required
-                              />
-                              <button
-                                className="primary"
-                                disabled={!!busy || !configuration.analysisConfigured}
-                              >
-                                Responder com fontes
-                              </button>
-                            </form>
-                            <p className="mt-3 text-xs text-slate-500">
-                              {configuration.provider === 'superproxy' ? 'Superproxy · ' : ''}
-                              {configuration.model || 'Modelo não configurado'} · Texto preservado
-                              em{' '}
-                              {date(
-                                snapshot.completed_at ||
-                                  snapshot.metrics?.referenceAt ||
-                                  snapshot.started_at,
-                              )}
-                            </p>
-                          </section>
-                          {answers.filter((answer) => answer.mode === 'question').length > 1 && (
-                            <select
-                              aria-label="Respostas anteriores"
-                              className="input max-w-full"
-                              value={currentAnswer?.id || ''}
-                              onChange={(event) =>
-                                setSelectedAnswer(
-                                  answers.find((answer) => answer.id === event.target.value),
-                                )
-                              }
-                            >
-                              {answers
-                                .filter((answer) => answer.mode === 'question')
-                                .map((answer) => (
-                                  <option key={answer.id} value={answer.id}>
-                                    {date(answer.created_at)} · {answer.question}
-                                  </option>
-                                ))}
-                            </select>
-                          )}
-                          <AnswerPanel record={currentAnswer} onSource={openSource} onCopy={copy} />
-                        </div>
-                      )}
-                      {['details', 'timeline'].includes(tab) && (
-                        <DealDetails
-                          key={`${snapshot.id}:${tab}`}
-                          snapshotId={snapshot.id}
-                          mode={tab}
-                          onSource={openSource}
-                        />
-                      )}
-                      {tab === 'sources' && sourceData && (
-                        <EvidencePanel
-                          key={snapshot.id}
-                          snapshot={snapshot}
-                          initialSources={sourceData}
-                          onError={setError}
-                        />
-                      )}
+                        )}
+                        {sourceData && (
+                          <EvidencePanel
+                            key={snapshot.id}
+                            snapshot={snapshot}
+                            initialSources={sourceData}
+                            onError={setError}
+                          />
+                        )}
+                      </details>
                     </>
                   )}
                 </>

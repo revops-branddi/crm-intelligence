@@ -73,34 +73,15 @@ function DetailSheet({ title, subtitle, onClose, children }) {
   );
 }
 
-function Claim({ claim, onSource, compact = false }) {
-  const sourceCount = new Set(claim.citations.map((ref) => ref.sourceId)).size;
+function Claim({ claim, compact = false }) {
   return (
     <article className={`briefing-claim ${compact ? 'compact' : ''}`}>
-      <span className={`claim-kind ${claim.kind}`}>
-        {claim.attribution || claimLabels[claim.kind]}
-      </span>
-      <p>{claim.text}</p>
-      {compact ? (
-        <button
-          className="evidence-link"
-          onClick={() => onSource(claim.citations[0].sourceId, claim.citations[0].quote)}
-          aria-label={`Abrir fonte: ${claim.text}`}
-        >
-          <FileSearch size={13} /> {sourceCount} {sourceCount === 1 ? 'fonte' : 'fontes'}
-        </button>
-      ) : (
-        <div className="claim-evidence">
-          {claim.citations.map((ref, i) => (
-            <button key={`${ref.sourceId}:${i}`} onClick={() => onSource(ref.sourceId, ref.quote)}>
-              <span>
-                <FileSearch size={14} /> Abrir fonte {i + 1}
-              </span>
-              <q>{ref.quote}</q>
-            </button>
-          ))}
-        </div>
+      {(claim.origin === 'note' || claim.kind !== 'fact') && (
+        <span className={`claim-kind ${claim.kind}`}>
+          {claim.origin === 'note' ? 'Registro interno' : claimLabels[claim.kind]}
+        </span>
       )}
+      <p>{claim.text}</p>
     </article>
   );
 }
@@ -297,20 +278,6 @@ export function BriefingDashboard({
           <ListChecks size={16} /> Revisar preparação
         </button>
       </header>
-      <div className="briefing-context">
-        <span>
-          <i className="context-dot" /> Texto preservado em{' '}
-          {date(snapshot.completed_at || snapshot.metrics?.referenceAt || snapshot.started_at)}
-        </span>
-        <span>
-          {record
-            ? `${claims.filter((claim) => !claim.origin).length} conclusões da análise · ${record.context_manifest?.selectedChunks ?? '—'}/${record.context_manifest?.totalChunks ?? '—'} trechos consultados`
-            : 'Análise ainda não gerada'}
-        </span>
-        {!!snapshot.pendingAttachments && (
-          <span className="attention-text">{snapshot.pendingAttachments} anexos pendentes</span>
-        )}
-      </div>
       <nav className="briefing-subnav" aria-label="Áreas do briefing">
         {[
           ['briefing', 'Quadros resumo'],
@@ -332,51 +299,42 @@ export function BriefingDashboard({
       </nav>
       {view === 'briefing' && (
         <>
-          <section className="briefing-summary">
-            <div>
-              <span className="summary-label">
-                {mode === 'briefing' ? 'PREPARAÇÃO DA REUNIÃO' : 'PREPARAÇÃO DA ABORDAGEM'}
-              </span>
-              <h3>{summary ? 'Momento do negócio' : 'O contexto em seis quadros'}</h3>
-              <p>
-                {summary?.text ||
-                  'Consulte as conclusões por assunto, confira as evidências e prepare o próximo contato.'}
-              </p>
-              {summary && (
-                <button
-                  className="text-action"
-                  onClick={() => source(summary.citations[0].sourceId, summary.citations[0].quote)}
-                >
-                  Conferir evidência <ArrowUpRight size={13} />
-                </button>
-              )}
-            </div>
-            <div className="summary-next">
-              <span className="summary-label">PRÓXIMO PASSO RECOMENDADO</span>
-              <p>
-                {next?.text ||
-                  'Consulte as lacunas e valide os pontos necessários antes do próximo contato.'}
-              </p>
-              {next && (
-                <button
-                  className="text-action"
-                  onClick={() =>
-                    setSheet({
-                      type: 'board',
-                      id: boards.find((board) => board.claims.includes(next)).id,
-                    })
-                  }
-                >
-                  Ver orientação completa <ChevronRight size={14} />
-                </button>
-              )}
-            </div>
-          </section>
+          {(summary || next) && (
+            <section className="briefing-summary">
+              <div>
+                <span className="summary-label">
+                  {mode === 'briefing' ? 'PREPARAÇÃO DA REUNIÃO' : 'PREPARAÇÃO DA ABORDAGEM'}
+                </span>
+                <h3>{summary ? 'Momento do negócio' : 'O contexto em seis quadros'}</h3>
+                <p>{summary?.text || 'Empresa, histórico e próximos passos para a conversa.'}</p>
+              </div>
+              <div className="summary-next">
+                <span className="summary-label">PRÓXIMO PASSO RECOMENDADO</span>
+                <p>
+                  {next?.text ||
+                    'Consulte as lacunas e valide os pontos necessários antes do próximo contato.'}
+                </p>
+                {next && (
+                  <button
+                    className="text-action"
+                    onClick={() =>
+                      setSheet({
+                        type: 'board',
+                        id: boards.find((board) => board.claims.includes(next)).id,
+                      })
+                    }
+                  >
+                    Ver orientação completa <ChevronRight size={14} />
+                  </button>
+                )}
+              </div>
+            </section>
+          )}
           <div className="briefing-generation">
             <div>
               <p>
                 {record
-                  ? `Análise de ${date(record.created_at)} · ${record.model}`
+                  ? `Atualizado em ${date(record.created_at)}`
                   : 'Os quadros serão preenchidos com conclusões apoiadas nas fontes.'}
               </p>
               {record && record.mode !== mode && (
@@ -450,9 +408,7 @@ export function BriefingDashboard({
                     {board.claims.length
                       ? board.claims
                           .slice(0, 2)
-                          .map((claim) => (
-                            <Claim key={claim.key} claim={claim} compact onSource={source} />
-                          ))
+                          .map((claim) => <Claim key={claim.key} claim={claim} compact />)
                       : (board.id !== 'company' || company) && (
                           <div className="board-empty">
                             <FileSearch size={22} />
@@ -522,10 +478,7 @@ export function BriefingDashboard({
                   ? `${pending.length} ocorrência(s) sinalizada(s) para revisão individual.`
                   : 'Confira as lacunas antes de considerar o briefing completo.'}
               </p>
-              <p className="briefing-muted">
-                {gaps.length} limites ou lacunas registrados. Link, tarefa e convite não comprovam
-                execução.
-              </p>
+              <p className="briefing-muted">{gaps.length} pontos com informação incompleta.</p>
               <button className="secondary" onClick={() => setView('reviews')}>
                 Revisar pendências <ChevronRight size={14} />
               </button>
@@ -636,19 +589,19 @@ export function BriefingDashboard({
                   ? `Organização #${company.organizationId}`
                   : 'Organização não identificada'}
               </strong>
-              <p>
-                O cadastro da organização é a base comum dos cards vinculados ao mesmo ID. Notas são
-                evidências deste card; produto, diagnóstico e negociação permanecem separados. Dados
-                da versão preservada, sem alterar o CRM.
-              </p>
-              {company.warnings.map((warning) => (
-                <p key={warning}>{warning}</p>
-              ))}
+              {!!company.warnings.length && (
+                <details className="coverage-details">
+                  <summary>Pontos a conferir ({company.warnings.length})</summary>
+                  {company.warnings.map((warning) => (
+                    <p key={warning}>{warning}</p>
+                  ))}
+                </details>
+              )}
             </div>
           )}
           <div className="sheet-claims">
             {selectedBoard.claims.map((claim) => (
-              <Claim key={claim.key} claim={claim} onSource={source} />
+              <Claim key={claim.key} claim={claim} />
             ))}
             {!selectedBoard.claims.length && (
               <p className="briefing-note">
@@ -656,18 +609,15 @@ export function BriefingDashboard({
               </p>
             )}
           </div>
-          <section className="sheet-checks">
-            <h3>O que conferir neste quadro</h3>
+          <details className="sheet-checks">
+            <summary>O que conferir neste quadro</summary>
             {selectedBoard.questions.map((question, i) => (
               <button className="question-row" key={i} onClick={() => ask(question)}>
                 {question}
                 <ArrowUpRight size={15} />
               </button>
             ))}
-            <p className="briefing-muted">
-              As perguntas são requisitos de preparação, não informações já confirmadas.
-            </p>
-          </section>
+          </details>
         </DetailSheet>
       )}
       {sheet?.type === 'checklist' && (

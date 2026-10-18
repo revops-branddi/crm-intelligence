@@ -265,7 +265,7 @@ test('connects without persisting token and extracts before analyzing with evide
   await page.getByRole('button', { name: 'Conectar', exact: true }).click();
   await page.getByLabel('ID do negócio').fill('7');
   await page.getByRole('button', { name: 'Analisar negócio', exact: true }).click();
-  await expect(page.getByText('20 etapas preservadas', { exact: false })).toBeVisible();
+  await expect(page.getByText('20 etapas preservadas', { exact: false })).toBeAttached();
   await expect(
     page.locator('.briefing-grid').getByText('A reunião foi confirmada pelo cliente.'),
   ).toBeVisible();
@@ -275,10 +275,9 @@ test('connects without persisting token and extracts before analyzing with evide
   await expect(
     page.locator('.briefing-grid').getByText('A reunião foi confirmada pelo cliente.'),
   ).toBeVisible();
-  await page.getByRole('button', { name: 'Abrir fonte', exact: false }).click();
-  await expect(page.getByRole('dialog')).toContainText(source.text);
-  await page.getByRole('button', { name: 'Fechar', exact: true }).click();
-  await page.getByRole('button', { name: 'Dados e fontes', exact: true }).click();
+  await expect(page.getByRole('button', { name: /Abrir fonte/ })).toHaveCount(0);
+  await page.getByText('Consulta técnica · dados preservados', { exact: true }).click();
+  await page.getByRole('button', { name: 'Carregar dados e fontes', exact: true }).click();
   await page.getByRole('button', { name: 'Ler texto consolidado' }).click();
   await expect(page.locator('.raw-text')).toContainText(source.text);
   await page.getByRole('button', { name: 'Ver original', exact: true }).click();
@@ -296,24 +295,18 @@ test('saved briefing displays organization and group evidence without another mo
   const board = page.getByRole('region', { name: 'Empresa e grupo', exact: true });
   await expect(board).toContainText('Grupo empresarial: Pertence ao Grupo Arco.');
   await expect(board).toContainText('Empresa: Lume');
-  await expect(board).toContainText('Nota interna do card');
-  await expect(board).toContainText('Cadastro da organização #250');
+  await expect(board).toContainText('Registro interno');
+  await expect(board.getByRole('button', { name: /fonte/ })).toHaveCount(0);
   await expect(board.getByText('Sem conclusão nesta análise')).toHaveCount(0);
   await board.getByRole('button', { name: 'Ver quadro completo' }).click();
-  await expect(page.getByRole('dialog')).toContainText(
-    'base comum dos cards vinculados ao mesmo ID',
+  await expect(page.getByRole('dialog')).toContainText('Organização #250');
+  await expect(page.getByRole('dialog').getByText(companySource.text, { exact: true })).toHaveCount(
+    0,
   );
+  await page.getByRole('dialog').getByText('Pontos a conferir (1)', { exact: true }).click();
   await expect(page.getByRole('dialog')).toContainText('não está preenchido no cadastro');
-  await page
-    .getByRole('dialog')
-    .getByRole('button', { name: /Abrir fonte 1/ })
-    .first()
-    .click();
-  await expect(page.getByRole('dialog', { name: 'Evidência original' })).toContainText(
-    companySource.text,
-  );
   expect(calls.some((call) => ['answer', 'start', 'step'].includes(call.action))).toBe(false);
-  await page.getByRole('button', { name: 'Fechar', exact: true }).click();
+  await page.getByRole('button', { name: 'Fechar painel', exact: true }).click();
   await page.setViewportSize({ width: 1536, height: 1100 });
   await page.screenshot({ path: 'test-results/company-briefing-desktop.png', fullPage: true });
   const heights = await page
@@ -330,15 +323,18 @@ test('saved versions stay visibly historical and answer user questions', async (
   await page.getByRole('button', { name: 'Extrações salvas', exact: true }).click();
   await page.getByRole('button', { name: /#7 · Conta de demonstração/ }).click();
   await expect(page.getByText('Versão histórica carregada.', { exact: false })).toBeVisible();
-  await page.getByRole('button', { name: 'Perguntas', exact: true }).click();
   await page
     .getByLabel('O que você precisa saber sobre este negócio?')
     .fill('Qual foi o último compromisso?');
-  await page.getByRole('button', { name: 'Responder com fontes' }).click();
+  await page.getByRole('button', { name: 'Perguntar', exact: true }).click();
   await expect(
     page.getByRole('paragraph').filter({ hasText: /^Qual foi o último compromisso\?$/ }),
   ).toBeVisible();
-  await expect(page.getByText('Fato registrado', { exact: true })).toBeVisible();
+  await expect(page.locator('.briefing-grid')).toBeVisible();
+  await expect(page.getByRole('button', { name: /Abrir fonte/ })).toHaveCount(0);
+  await expect(page.getByRole('navigation', { name: 'Visões do negócio' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Empresa e pessoas', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Carregar dados e fontes' })).not.toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
   await page.screenshot({ path: 'test-results/crm-question-mobile.png', fullPage: true });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
@@ -349,10 +345,11 @@ test('invalid AI response displays an error and preserves extracted data', async
   await fixture(page, { failAnalysis: true });
   await page.getByLabel('ID do negócio').fill('7');
   await page.getByRole('button', { name: 'Analisar negócio' }).click();
-  await expect(page.getByText('20 etapas preservadas', { exact: false })).toBeVisible();
+  await expect(page.getByText('20 etapas preservadas', { exact: false })).toBeAttached();
   await expect(page.getByRole('alert')).toContainText('A IA retornou conteúdo inválido.');
   await expect(page.getByText('Conta de demonstração', { exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Dados e fontes', exact: true }).click();
+  await page.getByText('Consulta técnica · dados preservados', { exact: true }).click();
+  await page.getByRole('button', { name: 'Carregar dados e fontes', exact: true }).click();
   await expect(page.getByText('Compromisso do cliente', { exact: true })).toBeVisible();
 });
 test('logout clears visible account data', async ({ page }) => {
@@ -471,7 +468,17 @@ test('Briefing 360 keeps six symmetric boards, preserves details and switches mo
   await page.screenshot({ path: 'test-results/briefing-360-desktop.png', fullPage: true });
   await page.getByRole('button', { name: 'Ver quadro completo' }).first().click();
   await expect(page.getByRole('dialog')).toContainText('Conclusão adicional preservada');
-  await page.keyboard.press('Escape');
+  await page.getByRole('dialog').getByText('O que conferir neste quadro', { exact: true }).click();
+  await page
+    .getByRole('dialog')
+    .getByRole('button', {
+      name: 'A marca pertence a um grupo? Quais marcas e BUs fazem parte dele?',
+    })
+    .click();
+  await expect(page.getByLabel('O que você precisa saber sobre este negócio?')).toBeFocused();
+  await expect(page.getByLabel('O que você precisa saber sobre este negócio?')).toHaveValue(
+    'A marca pertence a um grupo? Quais marcas e BUs fazem parte dele?',
+  );
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await page.getByRole('button', { name: 'Pré-prospecção', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Pré-prospecção', exact: true })).toHaveAttribute(
@@ -482,8 +489,6 @@ test('Briefing 360 keeps six symmetric boards, preserves details and switches mo
   await page.getByRole('button', { name: 'Revisar preparação' }).click();
   await page.getByRole('checkbox').first().check();
   await page.getByRole('button', { name: 'Fechar painel' }).click();
-  await page.getByRole('button', { name: 'Perguntas', exact: true }).click();
-  await page.getByRole('button', { name: 'Briefing 360', exact: true }).click();
   await page.getByRole('button', { name: 'Revisar preparação' }).click();
   await expect(page.getByRole('checkbox').first()).toBeChecked();
   await page.getByRole('button', { name: 'Fechar painel' }).click();
