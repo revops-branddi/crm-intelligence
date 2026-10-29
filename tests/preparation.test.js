@@ -292,6 +292,43 @@ test('changed evidence removes approval and draft, while unrelated tasks keep de
   assert.equal(tasks.a.draft, null);
   assert.equal(tasks.a.assignee.id, '9');
 });
+
+test('two distinct issues citing the same record remain independently reviewable', async () => {
+  const ctx = context();
+  ctx.db.tables.crm_answers = [
+    {
+      id: 'answer',
+      snapshot_id: snapshot.id,
+      user_id: user.id,
+      mode: 'overview',
+      answer: {
+        sections: [
+          {
+            title: 'Dados divergentes',
+            claims: [
+              {
+                text: 'O cargo diverge do cadastro.',
+                kind: 'fact',
+                citations: [{ sourceId: 'note:1', quote: 'Registro comercial completo.' }],
+              },
+              {
+                text: 'O responsável diverge do cadastro.',
+                kind: 'fact',
+                citations: [{ sourceId: 'note:1', quote: 'Registro comercial completo.' }],
+              },
+            ],
+          },
+        ],
+        gaps: [],
+        suggestedQuestions: [],
+      },
+    },
+  ];
+  const result = await call(ctx, 'preparation');
+  const issues = result.tasks.filter((task) => task.id.startsWith('issue:'));
+  assert.equal(issues.length, 2);
+  assert.notEqual(issues[0].id, issues[1].id);
+});
 test('material checks compare actual text and dates, never mere URLs or incidental competitor mentions', () => {
   const now = new Date('2026-10-29T12:00:00Z');
   const document = {

@@ -174,7 +174,7 @@ export function preparationItems({
   for (const item of reviewItems(record))
     add({
       ...item,
-      id: `issue:${digest([item.title, item.citations]).slice(0, 24)}`,
+      id: `issue:${digest([item.title, item.citations, normalize(item.found)]).slice(0, 24)}`,
       kind: 'issue',
     });
   return {
