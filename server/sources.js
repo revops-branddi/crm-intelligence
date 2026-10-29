@@ -201,6 +201,33 @@ export function selectContext(sources, question, maximum = 100000, recentPerKind
     const first = ranked.find((entry) => entry.source.kind === kind);
     if (first) add(first.source);
   }
+  // Briefing notes can be imported long after the underlying events. Protect
+  // the complete note's parts by record identity, never by a client/deal ID.
+  const noteKey = (source) =>
+    `${source.kind}:${source.taskKey || ''}:${source.recordId || source.id}`;
+  const briefingKeys = new Set(
+    candidates
+      .filter(
+        (source) =>
+          source.kind === 'notes' &&
+          /raio[\s\u2010-\u2015-]*x|hist[oó]rico (?:agrupado|(?:do |da )?(?:relacionamento|rela[cç][aã]o))|pr[eé][ -]reuni[aã]o/i.test(
+            `${source.title || ''} ${source.text}`,
+          ),
+      )
+      .map(noteKey),
+  );
+  const briefingNotes = candidates
+    .filter((source) => source.kind === 'notes' && briefingKeys.has(noteKey(source)))
+    .sort(
+      (a, b) =>
+        (a.part || 0) - (b.part || 0) ||
+        (parsePipedriveDate(b.date) || 0) - (parsePipedriveDate(a.date) || 0),
+    );
+  if (recentPerKind >= 5) {
+    const noteBudget = used + maximum * 0.2;
+    for (const source of briefingNotes)
+      if (used + JSON.stringify(source).length <= noteBudget) add(source);
+  }
   // Broad analyses need the latest primary records as well as lexical matches.
   // Otherwise an older, verbose internal summary can crowd out a new reply.
   const recent = [...candidates].sort(
@@ -257,7 +284,11 @@ export function selectContext(sources, question, maximum = 100000, recentPerKind
       selectedChunks: selected.length,
       omittedChunks: sources.length - selected.length,
       characters: used,
-      selection: 'primary-commercial-history-and-readable-files-v4',
+      selection: 'briefing-notes-primary-history-and-readable-files-v5',
+      briefingNotes: {
+        availableChunks: briefingNotes.length,
+        selectedChunks: briefingNotes.filter((source) => seen.has(source.id)).length,
+      },
       sourceIds: selected.map((s) => s.id),
     },
   };
