@@ -248,6 +248,20 @@ function Workspace({ user, logout }) {
     setError('');
     controller.current = new AbortController();
     try {
+      // Read legacy XLSX in resumable requests before spending an LLM call.
+      // This also keeps attachment work outside the generation time limit.
+      for (let batch = 0; ; batch++) {
+        const files = await apiRequest(
+          'readSpreadsheets',
+          { snapshotId: target.id },
+          controller.current.signal,
+        );
+        if (!files.remaining) break;
+        if (!files.processed || batch >= 9)
+          throw new Error(
+            'Ainda há planilhas aguardando leitura. Tente atualizar novamente para continuar de onde parou.',
+          );
+      }
       const result = await apiRequest(
         'answer',
         { snapshotId: target.id, mode, question: mode === 'question' ? question : '' },

@@ -14,6 +14,7 @@ export async function readSavedMaterials(db, snapshot, pages, reader = readMater
         (p) =>
           p.kind === 'materialText' &&
           p.payload?.data?.url === material.url &&
+          (p.payload.data.textStatus === 'readable' || p.payload.data.errorCode === 'restricted') &&
           Date.now() - Date.parse(p.payload.data.readAt) < 15 * 60 * 1000,
       );
       if (existing) return null;
@@ -35,6 +36,7 @@ export async function readSavedMaterials(db, snapshot, pages, reader = readMater
           url: material.url,
           readAt,
           textStatus: 'unreadable',
+          errorCode: error.code || 'material_unavailable',
           text: '',
           note:
             error.code === 'restricted'
