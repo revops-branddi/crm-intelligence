@@ -13,6 +13,12 @@ test('migration enforces private storage, denies browser access, atomic budgets 
       `create role anon;create role authenticated;create role service_role bypassrls;create schema auth;create table auth.users(id uuid primary key);create schema storage;create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint);create table public.deal_analyses(id integer);grant select on public.deal_analyses to authenticated;grant usage on schema public to anon,authenticated,service_role;`,
     );
     await db.exec(migration);
+    await db.exec(
+      await fs.readFile(
+        new URL('../supabase/migrations/202610290001_preparation_workflows.sql', import.meta.url),
+        'utf8',
+      ),
+    );
     const owner = '11111111-1111-4111-8111-111111111111',
       other = '22222222-2222-4222-8222-222222222222';
     await db.query('insert into auth.users(id) values($1),($2)', [owner, other]);
@@ -24,6 +30,7 @@ test('migration enforces private storage, denies browser access, atomic budgets 
     );
     await db.exec('set role authenticated');
     for (const table of [
+      'crm_preparation_workflows',
       'crm_connections',
       'crm_snapshots',
       'crm_raw_pages',
@@ -37,6 +44,25 @@ test('migration enforces private storage, denies browser access, atomic budgets 
       /permission denied/,
     );
     await db.exec('reset role;set role service_role');
+    const {
+      rows: [workflow],
+    } = await db.query(
+      "insert into crm_preparation_workflows(user_id,company_id,deal_id) values($1,'co','7') returning id",
+      [owner],
+    );
+    const updates = await Promise.all(
+      [0, 1].map(() =>
+        db.query(
+          'update crm_preparation_workflows set revision=revision+1, state=$2 where id=$1 and revision=0 returning revision',
+          [workflow.id, { tasks: { a: { status: 'open' } } }],
+        ),
+      ),
+    );
+    assert.equal(updates.filter((r) => r.rows.length).length, 1);
+    await assert.rejects(
+      () => db.query('delete from crm_preparation_workflows'),
+      /permission denied/,
+    );
     const limits = await Promise.all(
       Array.from({ length: 5 }, () =>
         db.query("select crm_consume_limit('owner','ai',2,60) as allowed"),

@@ -231,7 +231,10 @@ test('company projection uses only owned snapshot data and rechecks current deal
   assert.match(JSON.stringify(result.facts), /Lume/);
   assert.doesNotMatch(JSON.stringify(result.facts), /Do not leak/);
   db.tables.crm_snapshots[0].user_id = 'other';
-  await assert.rejects(() => handleAction(input, context), (error) => error.status === 404);
+  await assert.rejects(
+    () => handleAction(input, context),
+    (error) => error.status === 404,
+  );
   db.tables.crm_snapshots[0].user_id = user.id;
   await assert.rejects(
     () =>
@@ -245,6 +248,40 @@ test('company projection uses only owned snapshot data and rechecks current deal
       }),
     (error) => error.status === 403,
   );
+});
+
+test('preparation reads and writes recheck snapshot owner, tenant and live CRM visibility', async () => {
+  for (const action of ['preparation', 'saveScope', 'savePreparationTask', 'validateMaterial']) {
+    const snapshot = { ...state({}), status: 'complete', pending: [] };
+    const db = connectedDb(snapshot);
+    const input = { action, snapshotId: id };
+    const context = { db, user, env, clientFactory: () => ({ get: async () => ({ data: deal }) }) };
+    db.tables.crm_snapshots[0].user_id = 'another-owner';
+    await assert.rejects(
+      () => handleAction(input, context),
+      (e) => e.status === 404,
+    );
+    db.tables.crm_snapshots[0].user_id = user.id;
+    db.tables.crm_snapshots[0].company_id = 'another-company';
+    await assert.rejects(
+      () => handleAction(input, context),
+      (e) => e.status === 403,
+    );
+    db.tables.crm_snapshots[0].company_id = 'co';
+    await assert.rejects(
+      () =>
+        handleAction(input, {
+          ...context,
+          clientFactory: () => ({
+            get: async () => {
+              throw new HttpError(403, 'Revoked');
+            },
+          }),
+        }),
+      (e) => e.status === 403,
+    );
+    assert.equal(db.tables.crm_preparation_workflows, undefined);
+  }
 });
 
 test('oversized pages shrink without skipping the cursor or recording false completion', async () => {
