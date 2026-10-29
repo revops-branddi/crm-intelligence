@@ -352,6 +352,12 @@ export async function handleAction(
       86400,
     );
     const spreadsheets = await readSavedSpreadsheets(db, snapshot, pages);
+    if (spreadsheets.remaining)
+      throw new HttpError(
+        409,
+        'Conclua a leitura das planilhas preservadas antes de gerar o briefing.',
+        'pending_spreadsheets',
+      );
     await readSavedMaterials(db, snapshot, pages, materialReader);
     sources = buildSources(pages);
     const readFiles = new Set(
@@ -366,15 +372,6 @@ export async function handleAction(
           ...snapshot.gaps.filter(
             (gap) => !readFiles.has(gap.path?.match(/\/files\/(\d+)\/download/)?.[1]),
           ),
-          ...(spreadsheets.remaining
-            ? [
-                {
-                  resource: 'attachment',
-                  code: 'pending_spreadsheets',
-                  message: `${spreadsheets.remaining} planilhas aguardam leitura; atualize a análise para continuar.`,
-                },
-              ]
-            : []),
           ...(snapshot.pending.length
             ? [
                 {

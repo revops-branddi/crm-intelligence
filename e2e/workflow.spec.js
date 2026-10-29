@@ -103,6 +103,7 @@ async function fixture(
     rich = false,
     company = false,
     savedAnswers,
+    spreadsheetBatches = 0,
   } = {},
 ) {
   const calls = [];
@@ -272,6 +273,13 @@ async function fixture(
         break;
       case 'text':
         body = { text: source.text, totalCharacters: source.text.length, nextOffset: null };
+        break;
+      case 'readSpreadsheets':
+        body = {
+          files: [],
+          processed: spreadsheetBatches > 0 ? 2 : 0,
+          remaining: Math.max(0, spreadsheetBatches-- * 2),
+        };
         break;
       case 'spreadsheets':
         body = {
@@ -712,4 +720,15 @@ test('one briefing keeps legacy versions and question selection independent, the
     'overview',
   ]);
   expect(calls.some((call) => ['start', 'step'].includes(call.action))).toBe(false);
+});
+
+test('finishes resumable spreadsheet reads before calling the model', async ({ page }) => {
+  const calls = await fixture(page, { cached: true, spreadsheetBatches: 2 });
+  await page.getByLabel('ID do negócio').fill('7');
+  await page.getByRole('button', { name: 'Analisar negócio', exact: true }).click();
+  await page.getByRole('button', { name: 'Atualizar briefing', exact: true }).click();
+  await expect(page.getByText('Briefing atualizado.', { exact: true })).toBeVisible();
+  expect(
+    calls.filter((c) => ['readSpreadsheets', 'answer'].includes(c.action)).map((c) => c.action),
+  ).toEqual(['readSpreadsheets', 'readSpreadsheets', 'readSpreadsheets', 'answer']);
 });
