@@ -7,6 +7,15 @@ export function briefingVersions(records = []) {
 
 export const briefingBoards = [
   {
+    id: 'blockers',
+    title: 'Por que não avançou',
+    subtitle: 'Objeções, decisões e o que precisa mudar',
+    questions: [
+      'O que impediu o avanço após a reunião anterior e qual evidência sustenta esse motivo?',
+      'O que mudou desde a última recusa ou adiamento?',
+    ],
+  },
+  {
     id: 'company',
     title: 'Empresa e grupo',
     subtitle: 'Estrutura, marcas e escopo',
@@ -18,8 +27,8 @@ export const briefingBoards = [
   },
   {
     id: 'people',
-    title: 'Pessoas e papéis',
-    subtitle: 'Contato, influência e responsáveis',
+    title: 'Pessoas e engajamento',
+    subtitle: 'Quem respondeu e quem exige cuidado',
     questions: [
       'Quem é o contato principal, seu cargo, canal e escopo sobre as marcas?',
       'Quem decide, quem participa e quem representa a Branddi?',
@@ -28,8 +37,8 @@ export const briefingBoards = [
   },
   {
     id: 'history',
-    title: 'Histórico comercial',
-    subtitle: 'Interações, compromissos e objeções',
+    title: 'Conversas e reuniões anteriores',
+    subtitle: 'Quando, com quem e o que foi discutido',
     questions: [
       'Qual foi a última interação real e o motivo do aceite?',
       'Já houve reunião? Quando, com quem e por que não avançou?',
@@ -48,7 +57,7 @@ export const briefingBoards = [
   },
   {
     id: 'approach',
-    title: 'Abordagem e próximos passos',
+    title: 'Como avançar',
     subtitle: 'Gancho, mensagem e ação recomendada',
     questions: [
       'Qual produto priorizar e qual gancho usar para este contato?',
@@ -58,8 +67,8 @@ export const briefingBoards = [
   },
   {
     id: 'meeting',
-    title: 'Reunião e materiais',
-    subtitle: 'Agenda, relatório e preparação',
+    title: 'Próxima conversa',
+    subtitle: 'Aceite, participantes e objetivo',
     questions: [
       'Data, fuso, atividade e convite estão coerentes? Há confirmação de presença?',
       'Relatório e apresentação pertencem à marca correta e estão atualizados?',
@@ -73,6 +82,7 @@ const clean = (text = '') =>
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase();
 const rules = [
+  ['blockers', /nao avancou|bloqueios|impedimentos|motivo de perda/],
   [
     'people',
     /participante|papeis|pessoas|contato principal|responsavel atual|proprietari|cargo|autoridade/,
@@ -118,8 +128,9 @@ export function organizeBriefing(record, company) {
     }
   // Raw organization fields remain visible even when the saved AI answer omits
   // company context. AI conclusions are retained after the attributed records.
-  boards[0].claims.unshift(...(company?.facts || []));
-  return boards;
+  boards.find((board) => board.id === 'company').claims.push(...(company?.facts || []));
+  const order = ['history', 'blockers', 'people', 'meeting', 'opportunity', 'approach', 'company'];
+  return boards.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
 }
 export function reviewItems(record) {
   const claims = organizeBriefing(record).flatMap((board) => board.claims);

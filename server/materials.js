@@ -5,7 +5,9 @@ export function dealMaterials(sources) {
   for (const source of sources.filter((item) => item.kind === 'deal'))
     for (const line of source.text.split('\n')) {
       if (
-        !/relat[oó]rio|apresenta[çc][aã]o|link.*ppt|pescaria|monitoria|diagn[oó]stico/i.test(line)
+        !/relat[oó]rio|apresenta[çc][aã]o|link.*ppt|proposta|pescaria|monitoria|diagn[oó]stico/i.test(
+          line,
+        )
       )
         continue;
       for (const match of line.matchAll(/https?:\/\/[^\s<>"\]]+/g)) {

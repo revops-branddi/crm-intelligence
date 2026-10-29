@@ -19,9 +19,12 @@ export async function extractAttachment(buffer, mime, name) {
   const format =
     mime === 'application/pdf' || extension === 'pdf'
       ? 'pdf'
-      : extension === 'docx'
-        ? 'docx'
-        : null;
+      : extension === 'xlsx' ||
+          mime === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        ? 'xlsx'
+        : extension === 'docx'
+          ? 'docx'
+          : null;
   if (!format)
     return {
       text: '',

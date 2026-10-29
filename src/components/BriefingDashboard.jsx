@@ -18,10 +18,12 @@ import { apiRequest } from '../services/api';
 import { organizeBriefing, answerText, claimLabels } from '../services/briefing';
 import { AnswerPanel } from './AnswerPanel';
 import { DetailSheet } from './DetailSheet';
+import { SpreadsheetFiles } from './SpreadsheetFiles';
 import { PreparationWorkflow } from './PreparationWorkflow';
 
 const icons = {
   company: Building2,
+  blockers: CircleAlert,
   people: Users,
   history: History,
   opportunity: Radar,
@@ -105,7 +107,7 @@ export function BriefingDashboard({
       <header className="briefing-toolbar">
         <div>
           <span className="eyebrow">CONTEXTO PARA A PRÓXIMA CONVERSA</span>
-          <h2>Briefing 360</h2>
+          <h2>Briefing comercial</h2>
         </div>
         <button className="secondary" onClick={() => setView('reviews')}>
           <ListChecks size={16} /> Pendências salvas
@@ -138,14 +140,15 @@ export function BriefingDashboard({
         onPendingCount={setPendingCount}
         onSource={source}
       />
+      {view === 'materials' && <SpreadsheetFiles snapshotId={snapshot.id} record={record} />}
       {view === 'briefing' && (
         <>
-          {(summary || next) && (
+          {summary && (
             <section className="briefing-summary">
               <div>
                 <span className="summary-label">RESUMO COMERCIAL</span>
-                <h3>{summary ? 'Momento do negócio' : 'O contexto em seis quadros'}</h3>
-                <p>{summary?.text || 'Empresa, histórico e próximos passos para a conversa.'}</p>
+                <h3>{summary ? 'Momento do negócio' : 'Preparação da conversa'}</h3>
+                <p>{summary?.text || 'Histórico, pessoas e próximos passos para a conversa.'}</p>
               </div>
               <div className="summary-next">
                 <span className="summary-label">PRÓXIMO PASSO RECOMENDADO</span>
@@ -196,77 +199,96 @@ export function BriefingDashboard({
             </div>
           </div>
           <div className="briefing-grid">
-            {boards.map((board, index) => {
-              const Icon = icons[board.id];
-              return (
-                <section className="briefing-board" key={board.id} aria-label={board.title}>
-                  <header>
-                    <span className="board-icon">
-                      <Icon size={18} />
-                    </span>
-                    <div>
-                      <h3>{board.title}</h3>
-                      <p>{board.subtitle}</p>
+            {boards
+              .filter((board) => board.id !== 'company')
+              .map((board, index) => {
+                const Icon = icons[board.id];
+                return (
+                  <section className="briefing-board" key={board.id} aria-label={board.title}>
+                    <header>
+                      <span className="board-icon">
+                        <Icon size={18} />
+                      </span>
+                      <div>
+                        <h3>{board.title}</h3>
+                        <p>{board.subtitle}</p>
+                      </div>
+                      <span className="board-number">0{index + 1}</span>
+                    </header>
+                    <div className="board-preview">
+                      {board.id === 'company' && !company && (
+                        <p className="briefing-muted" role={companyError ? 'alert' : 'status'}>
+                          {companyError ? (
+                            <>
+                              Não foi possível ler os dados da empresa.{' '}
+                              <button
+                                className="text-action"
+                                onClick={() => setCompanyRetry((value) => value + 1)}
+                              >
+                                Tentar novamente
+                              </button>
+                            </>
+                          ) : (
+                            'Lendo dados registrados da empresa…'
+                          )}
+                        </p>
+                      )}
+                      {board.claims.length
+                        ? board.claims
+                            .slice(0, 4)
+                            .map((claim) => <Claim key={claim.key} claim={claim} compact />)
+                        : (board.id !== 'company' || company) && (
+                            <div className="board-empty">
+                              <FileSearch size={22} />
+                              <strong>
+                                {board.id === 'company'
+                                  ? 'Sem dados identificados nesta versão'
+                                  : 'Sem conclusão nesta análise'}
+                              </strong>
+                              <p>Isso não significa que a informação não exista no CRM.</p>
+                              <button
+                                className="text-action"
+                                onClick={() => ask(board.questions[0])}
+                              >
+                                Investigar este assunto <ChevronRight size={14} />
+                              </button>
+                            </div>
+                          )}
                     </div>
-                    <span className="board-number">0{index + 1}</span>
-                  </header>
-                  <div className="board-preview">
-                    {board.id === 'company' && !company && (
-                      <p className="briefing-muted" role={companyError ? 'alert' : 'status'}>
-                        {companyError ? (
-                          <>
-                            Não foi possível ler os dados da empresa.{' '}
-                            <button
-                              className="text-action"
-                              onClick={() => setCompanyRetry((value) => value + 1)}
-                            >
-                              Tentar novamente
-                            </button>
-                          </>
-                        ) : (
-                          'Lendo dados registrados da empresa…'
-                        )}
-                      </p>
-                    )}
-                    {board.claims.length
-                      ? board.claims
-                          .slice(0, 2)
-                          .map((claim) => <Claim key={claim.key} claim={claim} compact />)
-                      : (board.id !== 'company' || company) && (
-                          <div className="board-empty">
-                            <FileSearch size={22} />
-                            <strong>
-                              {board.id === 'company'
-                                ? 'Sem dados identificados nesta versão'
-                                : 'Sem conclusão nesta análise'}
-                            </strong>
-                            <p>Isso não significa que a informação não exista no CRM.</p>
-                            <button className="text-action" onClick={() => ask(board.questions[0])}>
-                              Investigar este assunto <ChevronRight size={14} />
-                            </button>
-                          </div>
-                        )}
-                  </div>
-                  <footer>
-                    <span>
-                      {board.claims.length}{' '}
-                      {board.id === 'company'
-                        ? 'itens'
-                        : board.claims.length === 1
-                          ? 'conclusão'
-                          : 'conclusões'}
-                    </span>
-                    <button
-                      className="text-action"
-                      onClick={() => setSheet({ type: 'board', id: board.id })}
-                    >
-                      Ver quadro completo <ChevronRight size={14} />
-                    </button>
-                  </footer>
-                </section>
-              );
-            })}
+                    <footer>
+                      <span>
+                        {board.claims.length}{' '}
+                        {board.id === 'company'
+                          ? 'itens'
+                          : board.claims.length === 1
+                            ? 'conclusão'
+                            : 'conclusões'}
+                      </span>
+                      <button
+                        className="text-action"
+                        onClick={() => setSheet({ type: 'board', id: board.id })}
+                      >
+                        Ver quadro completo <ChevronRight size={14} />
+                      </button>
+                    </footer>
+                  </section>
+                );
+              })}
           </div>
+          <button
+            className="text-action"
+            onClick={() => setSheet({ type: 'board', id: 'company' })}
+          >
+            <Building2 size={15} /> Contexto da empresa e do grupo
+          </button>
+          {companyError && (
+            <p className="briefing-muted">
+              Dados da empresa indisponíveis.{' '}
+              <button className="text-action" onClick={() => setCompanyRetry((value) => value + 1)}>
+                Tentar novamente
+              </button>
+            </p>
+          )}
           <div className="briefing-bottom-grid">
             <section className="briefing-section">
               <div className="briefing-section-heading">
@@ -282,7 +304,7 @@ export function BriefingDashboard({
                 ))
               ) : (
                 <p className="briefing-muted">
-                  Confira os requisitos de cada quadro nos detalhes de cada quadro.
+                  Use as perguntas abaixo para aprofundar o briefing.
                 </p>
               )}
               {suggestions.length > 3 && (

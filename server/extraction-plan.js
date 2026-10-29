@@ -80,7 +80,7 @@ export function discoverTasks(task, body) {
         tasks.push({
           kind: 'attachment',
           fileId: record.id,
-          name: record.file_name || record.name || String(record.id),
+          name: record.name || record.file_name || String(record.id),
           path: `/api/v1/files/${record.id}/download`,
           params: {},
         });
@@ -99,7 +99,7 @@ export function discoverTasks(task, body) {
         tasks.push({
           kind: 'attachment',
           fileId: id,
-          name: record.data.file_name || record.data.name || String(id),
+          name: record.data.name || record.data.file_name || String(id),
           path: `/api/v1/files/${id}/download`,
           params: {},
         });
@@ -112,7 +112,7 @@ function attachmentTasks(files = []) {
     .map((file) => ({
       kind: 'attachment',
       fileId: file.id,
-      name: file.file_name || file.name || String(file.id),
+      name: file.name || file.file_name || String(file.id),
       path: `/api/v1/files/${file.id}/download`,
       params: {},
     }));
@@ -149,7 +149,9 @@ export function advancePlan(snapshot, task, discovered, covered = []) {
   }
   return {
     pending: pending.sort(
-      (a, b) => Number(a.kind === 'attachment') - Number(b.kind === 'attachment'),
+      (a, b) =>
+        (a.kind !== 'attachment' ? 0 : /\.xlsx$/i.test(a.name) ? 1 : 2) -
+        (b.kind !== 'attachment' ? 0 : /\.xlsx$/i.test(b.name) ? 1 : 2),
     ),
     seen_tasks: [...known],
     completed_tasks: snapshot.completed_tasks + 1,

@@ -457,3 +457,42 @@ test('cached lookup remains owner and company scoped and text export retains all
   } while (offset !== null);
   assert.equal((text.match(/conteúdo original/g) || []).length, 20000);
 });
+
+test('spreadsheet reads require snapshot ownership and current CRM visibility', async () => {
+  for (const action of ['spreadsheets', 'readSpreadsheets']) {
+    const snapshot = { ...state({}), status: 'complete', pending: [], user_id: 'another-user' };
+    await assert.rejects(
+      handleAction(
+        { action, snapshotId: id },
+        {
+          db: connectedDb(snapshot),
+          user,
+          env,
+          clientFactory: () => ({
+            get: async () => {
+              throw new Error('must not request');
+            },
+          }),
+        },
+      ),
+      (e) => e.status === 404,
+    );
+    snapshot.user_id = user.id;
+    await assert.rejects(
+      handleAction(
+        { action, snapshotId: id },
+        {
+          db: connectedDb(snapshot),
+          user,
+          env,
+          clientFactory: () => ({
+            get: async () => {
+              throw new HttpError(403, 'Acesso revogado.');
+            },
+          }),
+        },
+      ),
+      (e) => e.status === 403,
+    );
+  }
+});

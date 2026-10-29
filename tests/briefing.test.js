@@ -14,7 +14,7 @@ const record = {
   id: 'answer1',
   answer: { sections: [{ title: 'Pessoas', claims: [claim] }], gaps: [], suggestedQuestions: [] },
 };
-test('six stable boards retain every historical claim, its type and complete evidence', () => {
+test('commercial boards and supporting company context retain every historical claim, its type and complete evidence', () => {
   const input = structuredClone(record);
   input.answer.sections.push({
     title: 'Título antigo sem categoria',
@@ -24,7 +24,7 @@ test('six stable boards retain every historical claim, its type and complete evi
   const boards = organizeBriefing(input);
   assert.deepEqual(
     boards.map((board) => board.id),
-    ['company', 'people', 'history', 'opportunity', 'approach', 'meeting'],
+    ['history', 'blockers', 'people', 'meeting', 'opportunity', 'approach', 'company'],
   );
   assert.equal(boards.flatMap((board) => board.claims).length, 2);
   assert.deepEqual(

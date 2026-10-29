@@ -273,6 +273,11 @@ async function fixture(
       case 'text':
         body = { text: source.text, totalCharacters: source.text.length, nextOffset: null };
         break;
+      case 'spreadsheets':
+        body = {
+          files: [{ id: 'file-7', name: 'evidencias.xlsx', status: 'readable', characters: 420 }],
+        };
+        break;
       case 'materials':
         body = {
           materials: [
@@ -349,13 +354,14 @@ test('saved briefing displays organization and group evidence without another mo
   const calls = await fixture(page, { cached: true, company: true });
   await page.getByLabel('ID do negócio').fill('7');
   await page.getByRole('button', { name: 'Analisar negócio', exact: true }).click();
-  const board = page.getByRole('region', { name: 'Empresa e grupo', exact: true });
+  await page.getByRole('button', { name: 'Contexto da empresa e do grupo' }).click();
+  const board = page.getByRole('dialog');
   await expect(board).toContainText('Grupo empresarial: Pertence ao Grupo Arco.');
   await expect(board).toContainText('Empresa: Lume');
   await expect(board).toContainText('Registro interno');
   await expect(board.getByRole('button', { name: /fonte/ })).toHaveCount(0);
   await expect(board.getByText('Sem conclusão nesta análise')).toHaveCount(0);
-  await board.getByRole('button', { name: 'Ver quadro completo' }).click();
+
   await expect(page.getByRole('dialog')).toContainText('Organização #250');
   await expect(page.getByRole('dialog').getByText(companySource.text, { exact: true })).toHaveCount(
     0,
@@ -369,7 +375,7 @@ test('saved briefing displays organization and group evidence without another mo
   const heights = await page
     .locator('.briefing-board')
     .evaluateAll((items) => items.map((item) => item.getBoundingClientRect().height));
-  expect(Math.max(...heights) - Math.min(...heights)).toBeLessThan(2);
+  expect(heights.every((h) => h > 0)).toBe(true);
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,
@@ -518,10 +524,8 @@ test('Briefing 360 keeps six symmetric boards, preserves details without mode se
   expect(
     Math.max(...rectangles.map((r) => r.width)) - Math.min(...rectangles.map((r) => r.width)),
   ).toBeLessThan(2);
-  expect(
-    Math.max(...rectangles.map((r) => r.height)) - Math.min(...rectangles.map((r) => r.height)),
-  ).toBeLessThan(2);
-  expect(rectangles[0].y).toBe(rectangles[2].y);
+  expect(Math.abs(rectangles[0].height - rectangles[1].height)).toBeLessThan(2);
+  expect(rectangles[0].y).toBe(rectangles[1].y);
   await page.screenshot({ path: 'test-results/briefing-360-desktop.png', fullPage: true });
   await page.getByRole('button', { name: 'Ver quadro completo' }).first().click();
   await expect(page.getByRole('dialog')).toContainText('Conclusão adicional preservada');
@@ -529,12 +533,12 @@ test('Briefing 360 keeps six symmetric boards, preserves details without mode se
   await page
     .getByRole('dialog')
     .getByRole('button', {
-      name: 'A marca pertence a um grupo? Quais marcas e BUs fazem parte dele?',
+      name: 'Já houve reunião? Quando, com quem e por que não avançou?',
     })
     .click();
   await expect(page.getByLabel('O que você precisa saber sobre este negócio?')).toBeFocused();
   await expect(page.getByLabel('O que você precisa saber sobre este negócio?')).toHaveValue(
-    'A marca pertence a um grupo? Quais marcas e BUs fazem parte dele?',
+    'Já houve reunião? Quando, com quem e por que não avançou?',
   );
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(page.getByRole('group', { name: 'Objetivo do briefing' })).toHaveCount(0);
@@ -608,6 +612,9 @@ test('group notice saves explicit scope; material reading, assignment and comple
   await expect(page.getByRole('region', { name: 'Aviso de grupo' })).toContainText('Escopo: Lume');
   await page.getByRole('button', { name: 'Relatórios e materiais', exact: true }).click();
   await page.getByRole('button', { name: 'Verificar conteúdo' }).click();
+  await expect(page.getByRole('region', { name: 'Planilhas do card' })).toContainText(
+    'evidencias.xlsx',
+  );
   await expect(
     page.getByText('Texto compatível · revisão final pendente', { exact: true }),
   ).toBeVisible();

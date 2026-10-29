@@ -3,7 +3,7 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "functions": {
-    "api/intelligence.js": { "maxDuration": 120, "includeFiles": "server/attachment-worker.js" }
+    "api/intelligence.js": { "maxDuration": 120, "includeFiles": "server/**" }
   },
   "rewrites": [{ "source": "/((?!api/).*)", "destination": "/index.html" }],
   "headers": [

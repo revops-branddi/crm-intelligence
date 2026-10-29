@@ -268,7 +268,7 @@
 }
 .briefing-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space);
   align-items: stretch;
 }
@@ -1154,4 +1154,38 @@
   .workflow-task-list > article > div {
     flex-basis: 100%;
   }
+}
+
+/* Equal columns, with complete short conclusions instead of clipped previews. */
+.briefing-grid {
+  grid-auto-rows: auto;
+}
+.briefing-claim.compact {
+  min-height: 0;
+  padding-block: 9px;
+}
+.briefing-claim.compact > p {
+  display: block;
+  overflow: visible;
+  -webkit-line-clamp: unset;
+}
+.spreadsheet-files {
+  list-style: none;
+  padding: 0;
+}
+.spreadsheet-files li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid #e5ecee;
+  padding: 10px 0;
+  font-size: 13px;
+}
+.spreadsheet-files li > span:first-child {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.spreadsheet-files .status-pill {
+  flex-shrink: 0;
 }

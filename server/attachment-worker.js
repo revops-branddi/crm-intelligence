@@ -1,6 +1,7 @@
 import { parentPort, workerData } from 'node:worker_threads';
 import { unzipSync, strFromU8 } from 'fflate';
 import { convert } from 'html-to-text';
+import { spreadsheetText } from './spreadsheet.js';
 const buffer = Buffer.from(workerData.buffer);
 try {
   let text;
@@ -12,6 +13,8 @@ try {
     } finally {
       await pdf.loadingTask.destroy();
     }
+  } else if (workerData.format === 'xlsx') {
+    text = spreadsheetText(buffer);
   } else {
     let expanded = 0;
     const entries = unzipSync(buffer, {

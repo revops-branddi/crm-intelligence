@@ -109,3 +109,11 @@ test('full wrapped mail index replaces redundant mailbox requests without losing
   assert.ok(next.pending.some((t) => t.fileId === 4));
   assert.ok(next.seen_tasks.includes(taskKey(mail)));
 });
+
+test('display filename identifies spreadsheets even when file_name is an opaque storage path', () => {
+  const tasks = discoverTasks(
+    { kind: 'files' },
+    { data: [{ id: 9, name: 'evidencias.xlsx', file_name: 'storage/opaque' }] },
+  );
+  assert.equal(tasks.find((t) => t.kind === 'attachment').name, 'evidencias.xlsx');
+});

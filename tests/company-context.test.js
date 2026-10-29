@@ -37,7 +37,10 @@ test('company and group come from preserved fields even when AI omitted the boar
       assert.ok(sources.find((source) => source.id === ref.sourceId).text.includes(ref.quote));
   assert.match(company.warnings.join(' '), /não está preenchido no cadastro/);
   const record = { answer: { sections: [], gaps: [], suggestedQuestions: [] } };
-  assert.equal(organizeBriefing(record, company)[0].claims.length, company.facts.length);
+  assert.equal(
+    organizeBriefing(record, company).find((board) => board.id === 'company').claims.length,
+    company.facts.length,
+  );
   assert.match(answerText(record, company), /Grupo Arco[\s\S]*Fonte note:1/);
   assert.deepEqual(record.answer.sections, []);
 });

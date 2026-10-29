@@ -38,10 +38,13 @@ export function publicSnapshot(row) {
     ...publicRow,
     remainingTasks: pending?.length || 0,
     pendingAttachments: pending?.filter((task) => task.kind === 'attachment').length || 0,
+    pendingSpreadsheets:
+      pending?.filter((task) => task.kind === 'attachment' && /\.xlsx$/i.test(task.name)).length ||
+      0,
     analysisReady:
       ['complete', 'partial'].includes(row.status) ||
       (row.completed_tasks > 0 &&
         Boolean(pending?.length) &&
-        pending.every((task) => task.kind === 'attachment')),
+        pending.every((task) => task.kind === 'attachment' && !/\.xlsx$/i.test(task.name))),
   };
 }
