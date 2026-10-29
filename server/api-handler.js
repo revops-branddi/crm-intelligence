@@ -1,3 +1,4 @@
+import { readSavedMaterials } from './material-reading.js';
 import { z } from 'zod';
 import { database, authenticate, encryptToken, decryptToken, limit } from './security.js';
 import { pipedriveClient, positiveId } from './pipedrive.js';
@@ -11,6 +12,7 @@ import { analysisConfiguration } from './llm-provider.js';
 import { dealMaterials } from './materials.js';
 import { companyContext } from './company-context.js';
 import { preparationAction } from './preparation.js';
+import { readSavedSpreadsheets, spreadsheetInventory } from './spreadsheet-reading.js';
 
 const uuid = z.string().uuid();
 const assigneeId = z.string().regex(/^[1-9]\d{0,14}$/);
@@ -22,9 +24,16 @@ const inputSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('list'), offset: z.number().int().min(0).max(100000).default(0) }),
   z.object({ action: z.literal('latest'), dealId: z.string().regex(/^[1-9]\d{0,14}$/) }),
   z.object({ action: z.literal('start'), dealId: z.string().regex(/^[1-9]\d{0,14}$/) }),
-  ...['step', 'get', 'answers', 'materials', 'company', 'preparation'].map((action) =>
-    z.object({ action: z.literal(action), snapshotId: uuid }),
-  ),
+  ...[
+    'step',
+    'get',
+    'answers',
+    'materials',
+    'company',
+    'preparation',
+    'spreadsheets',
+    'readSpreadsheets',
+  ].map((action) => z.object({ action: z.literal(action), snapshotId: uuid })),
   z.object({
     action: z.literal('saveScope'),
     snapshotId: uuid,
@@ -114,7 +123,14 @@ export async function connectionFor(db, user, env = process.env) {
 }
 export async function handleAction(
   input,
-  { db, user, env = process.env, clientFactory = pipedriveClient, generate = generateAnswer },
+  {
+    db,
+    user,
+    env = process.env,
+    clientFactory = pipedriveClient,
+    generate = generateAnswer,
+    materialReader,
+  },
 ) {
   if (input.action === 'status') {
     const connection = checked(
@@ -270,7 +286,12 @@ export async function handleAction(
     return { url: result.signedUrl };
   }
   const pages = await allPages(db, snapshot.id);
-  const sources = buildSources(pages);
+  if (input.action === 'spreadsheets') return { files: spreadsheetInventory(pages) };
+  if (input.action === 'readSpreadsheets') {
+    await limit(db, user.id, 'spreadsheet-reading', 20, 3600);
+    return readSavedSpreadsheets(db, snapshot, pages);
+  }
+  let sources = buildSources(pages);
   if (
     ['preparation', 'saveScope', 'savePreparationTask', 'validateMaterial'].includes(input.action)
   ) {
@@ -330,13 +351,30 @@ export async function handleAction(
       Number(env.AI_REQUESTS_GLOBAL_DAY) || 300,
       86400,
     );
+    const spreadsheets = await readSavedSpreadsheets(db, snapshot, pages);
+    await readSavedMaterials(db, snapshot, pages, materialReader);
+    sources = buildSources(pages);
+    const readFiles = new Set(
+      spreadsheets.files.filter((f) => f.status === 'readable').map((f) => f.id),
+    );
     const generated = await generate({
       sources,
       snapshot: {
         ...snapshot,
         completed_at: snapshot.completed_at || snapshot.metrics?.referenceAt,
         gaps: [
-          ...snapshot.gaps,
+          ...snapshot.gaps.filter(
+            (gap) => !readFiles.has(gap.path?.match(/\/files\/(\d+)\/download/)?.[1]),
+          ),
+          ...(spreadsheets.remaining
+            ? [
+                {
+                  resource: 'attachment',
+                  code: 'pending_spreadsheets',
+                  message: `${spreadsheets.remaining} planilhas aguardam leitura; atualize a análise para continuar.`,
+                },
+              ]
+            : []),
           ...(snapshot.pending.length
             ? [
                 {

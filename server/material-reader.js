@@ -41,7 +41,10 @@ export function materialReadUrl(value) {
   const url = new URL(value);
   if (url.protocol !== 'https:' || url.username || url.password || (url.port && url.port !== '443'))
     throw unavailable('Link fora dos endereços permitidos para leitura.', 'unsupported_host');
-  if (url.hostname === 'report.branddi.com' && /^\/report\/[a-zA-Z0-9_-]+\/?$/.test(url.pathname)) {
+  if (
+    url.hostname === 'report.branddi.com' &&
+    /^\/(?:report\/[a-zA-Z0-9_-]+|[a-zA-Z0-9_-]+\/gd)\/?$/.test(url.pathname)
+  ) {
     url.search = '';
     url.hash = '';
     return url;
@@ -99,7 +102,7 @@ export async function readMaterial(value, { resolve = lookup, request = https.re
       const report =
         initial.hostname === 'report.branddi.com' &&
         next.hostname === initial.hostname &&
-        /^\/report\/[a-zA-Z0-9_-]+\/?$/.test(next.pathname);
+        /^\/(?:report\/[a-zA-Z0-9_-]+|[a-zA-Z0-9_-]+\/gd)\/?$/.test(next.pathname);
       if (
         !(googleExport || report) ||
         next.protocol !== 'https:' ||
