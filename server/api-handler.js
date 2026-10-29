@@ -10,8 +10,11 @@ import { generateAnswer } from './analysis.js';
 import { analysisConfiguration } from './llm-provider.js';
 import { dealMaterials } from './materials.js';
 import { companyContext } from './company-context.js';
+import { preparationAction } from './preparation.js';
 
 const uuid = z.string().uuid();
+const assigneeId = z.string().regex(/^[1-9]\d{0,14}$/);
+const preparationRevision = z.number().int().min(0);
 const inputSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('status') }),
   z.object({ action: z.literal('disconnect') }),
@@ -19,9 +22,53 @@ const inputSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('list'), offset: z.number().int().min(0).max(100000).default(0) }),
   z.object({ action: z.literal('latest'), dealId: z.string().regex(/^[1-9]\d{0,14}$/) }),
   z.object({ action: z.literal('start'), dealId: z.string().regex(/^[1-9]\d{0,14}$/) }),
-  ...['step', 'get', 'answers', 'materials', 'company'].map((action) =>
+  ...['step', 'get', 'answers', 'materials', 'company', 'preparation'].map((action) =>
     z.object({ action: z.literal(action), snapshotId: uuid }),
   ),
+  z.object({
+    action: z.literal('saveScope'),
+    snapshotId: uuid,
+    revision: preparationRevision,
+    assigneeId,
+    scope: z.object({
+      kind: z.enum(['brand', 'group']),
+      brands: z.array(z.string().trim().min(2).max(100)).min(1).max(10),
+      domains: z
+        .array(
+          z
+            .string()
+            .trim()
+            .toLowerCase()
+            .regex(/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/),
+        )
+        .min(1)
+        .max(20),
+      product: z.string().trim().min(2).max(160),
+      maxAgeDays: z.number().int().min(1).max(365),
+    }),
+  }),
+  z.object({
+    action: z.literal('savePreparationTask'),
+    snapshotId: uuid,
+    revision: preparationRevision,
+    taskId: z.string().min(1).max(100),
+    assigneeId,
+    status: z.enum(['open', 'in_progress', 'resolved', 'dismissed']),
+    note: z.string().trim().max(2000),
+    dueDate: z.union([z.literal(''), z.string().date()]).default(''),
+    approveHelpdesk: z.boolean().default(false),
+    draft: z
+      .object({
+        title: z.string().trim().min(1).max(200),
+        description: z.string().trim().min(15).max(3800),
+      })
+      .optional(),
+  }),
+  z.object({
+    action: z.literal('validateMaterial'),
+    snapshotId: uuid,
+    materialKey: z.string().regex(/^material:[a-f\d]{24}$/),
+  }),
   z.object({
     action: z.literal('sources'),
     snapshotId: uuid,
@@ -224,6 +271,19 @@ export async function handleAction(
   }
   const pages = await allPages(db, snapshot.id);
   const sources = buildSources(pages);
+  if (
+    ['preparation', 'saveScope', 'savePreparationTask', 'validateMaterial'].includes(input.action)
+  ) {
+    if (input.action === 'validateMaterial') await limit(db, user.id, 'material-checks', 30, 3600);
+    return preparationAction(input, {
+      db,
+      user,
+      snapshot,
+      sources,
+      currentDeal: current.data,
+      client,
+    });
+  }
   if (input.action === 'company') return companyContext(sources);
   if (input.action === 'materials') return dealMaterials(sources);
   if (input.action === 'details') return dealDetails(pages, sources, input.offset || 0);

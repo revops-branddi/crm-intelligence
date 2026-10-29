@@ -1,4 +1,7 @@
 import { test, expect } from '@playwright/test';
+import { preparationAction } from '../server/preparation.js';
+import { memoryDb } from '../tests/memory-db.js';
+import { validateMaterial } from '../server/material-validation.js';
 const id = '22222222-2222-4222-8222-222222222222';
 const source = {
   id: 'notes:aaaaaaaaaaaa:1:0',
@@ -105,6 +108,43 @@ async function fixture(
   const calls = [];
   const cachedAnswer = answer('overview');
   if (rich) cachedAnswer.answer.sections = richSections();
+  const workflowUser = { id: '11111111-1111-4111-8111-111111111111', email: 'tester@branddi.test' };
+  const workflowContext = {
+    db: memoryDb({ crm_answers: [{ ...cachedAnswer, user_id: workflowUser.id }] }),
+    user: workflowUser,
+    snapshot: { ...snapshot, user_id: workflowUser.id, company_id: 'co' },
+    currentDeal: { id: 7, owner_id: 9 },
+    sources: [
+      {
+        id: 'deal:7',
+        recordId: '7',
+        kind: 'deal',
+        text: 'Título: Lume | Brand Bidding\nOrganização: 250\ncustom_fields.Relatório Brand Bidding: https://report.branddi.com/report/teste',
+      },
+      {
+        id: 'organization:250',
+        recordId: '250',
+        kind: 'organization',
+        text: 'Nome: Lume\nSite: lume.example.test',
+      },
+      ...(company ? [{ ...companySource, text: 'deal_id: 7\n' + companySource.text }] : []),
+    ],
+    client: {
+      get: async () => ({
+        data: [
+          { id: 9, name: 'SDR Teste', active_flag: true },
+          { id: 10, name: 'Closer Teste', active_flag: true },
+        ],
+      }),
+    },
+    validate: (material, scope) =>
+      validateMaterial(material, scope, {
+        read: async () => ({
+          title: 'Lume — Brand Bidding',
+          text: `Relatório Lume — Brand Bidding. Domínio: lume.example.test. Gerado em: ${new Date().toISOString().slice(0, 10)}. Contexto e diagnóstico comercial da marca com detalhes e recomendações.`,
+        }),
+      }),
+  };
   let isConnected = connected,
     steps = 0;
   await page.addInitScript(() => {
@@ -134,6 +174,20 @@ async function fixture(
     expect(route.request().headers().authorization).toBe('Bearer synthetic-access-token');
     let body;
     switch (request.action) {
+      case 'preparation':
+      case 'saveScope':
+      case 'savePreparationTask':
+      case 'validateMaterial':
+        try {
+          body = await preparationAction(request, workflowContext);
+        } catch (error) {
+          return route.fulfill({
+            status: error.status || 500,
+            contentType: 'application/json',
+            body: JSON.stringify({ error: error.message, code: error.code }),
+          });
+        }
+        break;
       case 'status':
         body = {
           connection: isConnected ? { company_id: 'co' } : null,
@@ -486,43 +540,118 @@ test('Briefing 360 keeps six symmetric boards, preserves details without mode se
   await expect(page.getByRole('group', { name: 'Objetivo do briefing' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: /Pré-prospecção|Pré-reunião/ })).toHaveCount(0);
   expect(calls.some((call) => call.action === 'answer')).toBe(false);
-  await page.getByRole('button', { name: 'Revisar preparação' }).click();
-  await page.getByRole('checkbox').first().check();
-  await page.getByRole('button', { name: 'Fechar painel' }).click();
-  await page.getByRole('button', { name: 'Revisar preparação' }).click();
-  await expect(page.getByRole('checkbox').first()).toBeChecked();
-  await page.getByRole('button', { name: 'Fechar painel' }).click();
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await expect(cards).toHaveCount(6);
   await page.screenshot({ path: 'test-results/briefing-360-mobile.png', fullPage: true });
 });
 
-test('reviews one occurrence at a time and hands an editable draft to the canonical Hub flow', async ({
+test('persists an individually approved helpdesk draft and never approves the other issue', async ({
   page,
 }) => {
-  await fixture(page, { cached: true, rich: true });
+  const calls = await fixture(page, { cached: true, rich: true });
   await page.getByLabel('ID do negócio').fill('7');
   await page.getByRole('button', { name: 'Analisar negócio', exact: true }).click();
   await page.getByRole('button', { name: 'Pendências e erros' }).click();
-  await expect(page.getByText('2 a validar', { exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Revisar ocorrência' }).first().click();
-  await page.getByLabel('Título', { exact: true }).fill('Verificar cargo do contato');
-  const link = page.getByRole('link', { name: 'Revisar e continuar no Hub' });
+  const row = page
+    .locator('.workflow-task-list article')
+    .filter({ has: page.getByRole('heading', { name: 'Pessoas e papéis', exact: true }) });
+  await row.getByRole('button', { name: 'Revisar pendência' }).click();
+  await page.getByRole('combobox', { name: 'Responsável', exact: true }).selectOption('10');
+  await page.getByLabel('Observação da revisão').fill('Conferido o cargo com o registro original.');
+  await page.getByText('Chamado individual no Hub RevOps', { exact: true }).click();
+  await expect(page.getByRole('link', { name: 'Continuar no Hub' })).toHaveCount(0);
+  await page.getByLabel('Título do chamado').fill('Verificar cargo do contato');
+  await page.getByLabel('Confirmo este erro e aprovo somente este chamado.').check();
+  await page.getByRole('button', { name: 'Salvar e aprovar este chamado' }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await page.reload();
+  await page.getByLabel('ID do negócio').fill('7');
+  await page.getByRole('button', { name: 'Analisar negócio', exact: true }).click();
+  await page.getByRole('button', { name: 'Pendências e erros' }).click();
+  await expect(row).toContainText('Closer Teste');
+  await expect(
+    page.getByText('Chamado aprovado para revisão no Hub', { exact: false }),
+  ).toHaveCount(1);
+  await row.getByRole('button', { name: 'Revisar pendência' }).click();
+  const link = page.getByRole('link', { name: 'Continuar no Hub' });
   const url = new URL(await link.getAttribute('href'));
   expect(url.origin).toBe('https://revops.branddi.com');
   expect(url.pathname).toBe('/operacao/central-revops/helpdesk/novo');
   expect(url.searchParams.get('texto')).toContain('Verificar cargo do contato');
   expect(url.searchParams.get('texto')).not.toContain('relatório diverge');
-  await page.getByRole('button', { name: 'Não é erro', exact: true }).click();
-  await expect(page.getByText('1 a validar', { exact: true })).toBeVisible();
-  await expect(page.locator('.review-list').getByText('A validar', { exact: true })).toHaveCount(1);
+  await page
+    .getByLabel('Descrição do chamado')
+    .fill('Texto corrigido para revisão individual antes de aprovar novamente.');
+  await expect(link).toHaveCount(0);
+  expect(
+    calls.filter((call) => call.action === 'savePreparationTask' && call.approveHelpdesk),
+  ).toHaveLength(1);
+});
+
+test('group notice saves explicit scope; material reading, assignment and completion survive reload', async ({
+  page,
+}) => {
+  await fixture(page, { cached: true, company: true });
+  await page.getByLabel('ID do negócio').fill('7');
+  await page.getByRole('button', { name: 'Analisar negócio', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'Aviso de grupo' })).toContainText('Grupo Arco');
+  await page.setViewportSize({ width: 1536, height: 1100 });
+  await page.screenshot({ path: 'test-results/group-workflow-desktop.png' });
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: 'test-results/group-workflow-mobile.png' });
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.getByRole('button', { name: 'Definir escopo', exact: true }).click();
+  await page.getByLabel('Produto', { exact: true }).fill('Brand Bidding');
+  await page.getByRole('button', { name: 'Salvar escopo' }).click();
+  await expect(page.getByRole('region', { name: 'Aviso de grupo' })).toContainText('Escopo: Lume');
   await page.getByRole('button', { name: 'Relatórios e materiais', exact: true }).click();
-  await expect(page.getByRole('link', { name: 'Abrir material' })).toHaveAttribute(
-    'href',
-    'https://report.branddi.com/report/teste',
+  await page.getByRole('button', { name: 'Verificar conteúdo' }).click();
+  await expect(
+    page.getByText('Texto compatível · revisão final pendente', { exact: true }),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Revisar pendência', exact: true }).click();
+  await page.getByRole('combobox', { name: 'Responsável', exact: true }).selectOption('10');
+  await page.getByRole('combobox', { name: 'Status', exact: true }).selectOption('resolved');
+  await page
+    .getByLabel('Observação da revisão')
+    .fill('Apresentação visual e diagnóstico revisados para a marca Lume.');
+  await page.getByRole('button', { name: 'Salvar pendência', exact: true }).click();
+  await page.reload();
+  await page.getByLabel('ID do negócio').fill('7');
+  await page.getByRole('button', { name: 'Analisar negócio', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'Aviso de grupo' })).toContainText('Escopo: Lume');
+  await page.getByRole('button', { name: 'Pendências e erros' }).click();
+  await page.getByText(/Concluídas e versões anteriores/).click();
+  await page.getByRole('button', { name: 'Revisar Relatório Brand Bidding Concluída' }).click();
+  await expect(page.getByRole('combobox', { name: 'Responsável', exact: true })).toHaveValue('10');
+  await expect(page.getByLabel('Observação da revisão')).toHaveValue(
+    'Apresentação visual e diagnóstico revisados para a marca Lume.',
   );
-  await expect(page.getByText('Link registrado · a verificar', { exact: true })).toBeVisible();
+});
+
+test('failed persistence never presents a successful save or an approved ticket', async ({
+  page,
+}) => {
+  await fixture(page, { cached: true, company: true });
+  await page.route('**/api/intelligence', async (route) =>
+    route.request().postDataJSON().action === 'saveScope'
+      ? route.fulfill({
+          status: 503,
+          contentType: 'application/json',
+          body: JSON.stringify({ error: 'Armazenamento indisponível.' }),
+        })
+      : route.fallback(),
+  );
+  await page.getByLabel('ID do negócio').fill('7');
+  await page.getByRole('button', { name: 'Analisar negócio', exact: true }).click();
+  await page.getByRole('button', { name: 'Definir escopo', exact: true }).click();
+  await page.getByLabel('Produto', { exact: true }).fill('Brand Bidding');
+  await page.getByRole('button', { name: 'Salvar escopo' }).click();
+  await expect(page.getByRole('alert')).toContainText('Armazenamento indisponível.');
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await expect(page.getByText('Preparação salva.', { exact: true })).toHaveCount(0);
 });
 
 test('one briefing keeps legacy versions and question selection independent, then updates the unified analysis', async ({

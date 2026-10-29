@@ -71,7 +71,6 @@ function Workspace({ user, logout }) {
     [openedSource, setOpenedSource] = useState(null);
   const [page, setPage] = useState('home'),
     [savedQuery, setSavedQuery] = useState('');
-  const [briefingStates, setBriefingStates] = useState({});
   const controller = useRef(null),
     mounted = useRef(true);
   useEffect(() => {
@@ -686,13 +685,6 @@ function Workspace({ user, logout }) {
                         key={snapshot.id}
                         snapshot={snapshot}
                         records={versions}
-                        sessionState={briefingStates[snapshot.id]}
-                        onSessionState={(update) =>
-                          setBriefingStates((previous) => ({
-                            ...previous,
-                            [snapshot.id]: update(previous[snapshot.id] || {}),
-                          }))
-                        }
                         record={currentBriefing}
                         onSelect={setSelectedBriefing}
                         onGenerate={() => analyze('overview')}

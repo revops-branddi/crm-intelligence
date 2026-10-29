@@ -996,3 +996,162 @@
 .answer-claim {
   padding-top: 12px;
 }
+.workflow-group,
+.workflow-summary {
+  margin: 14px 0;
+  padding: 16px 20px;
+  border: 1px solid #c8dedb;
+  border-radius: 14px;
+  background: #f0f8f6;
+}
+.workflow-group {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.workflow-group > div {
+  flex: 1;
+  min-width: 0;
+}
+.workflow-group > svg {
+  flex-shrink: 0;
+  color: #16766e;
+}
+.workflow-group strong {
+  color: #123d44;
+  font-size: 15px;
+}
+.workflow-group p {
+  font-size: 13px;
+  color: #50666e;
+  line-height: 1.5;
+  margin: 4px 0 0;
+}
+.workflow-summary {
+  background: #fff;
+  border-color: #dce5e7;
+}
+.workflow-summary .briefing-section-heading {
+  margin-bottom: 4px;
+}
+.workflow-summary strong {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+.workflow-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  text-align: left;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid #e8eeee;
+  font-size: 13px;
+}
+.workflow-row > span {
+  flex: 1;
+  min-width: 0;
+}
+.workflow-row small {
+  color: #607780;
+  font-size: 12px;
+}
+.workflow-row svg {
+  flex-shrink: 0;
+}
+.workflow-saved {
+  color: #16766e;
+  font-size: 12px;
+  margin: 6px 0;
+}
+.workflow-status {
+  padding: 8px 0;
+  color: #607780;
+  font-size: 13px;
+}
+.workflow-task-list {
+  display: grid;
+  gap: 0;
+}
+.workflow-task-list > article {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 18px 0;
+  border-bottom: 1px solid #e2e9e9;
+}
+.workflow-task-list > article > div {
+  flex: 1;
+  min-width: 0;
+}
+.workflow-task-list h3 {
+  font-size: 15px;
+  font-weight: 650;
+  margin: 6px 0;
+}
+.workflow-task-list p {
+  color: #526a74;
+  font-size: 13px;
+  line-height: 1.5;
+  margin-bottom: 7px;
+}
+.workflow-task-list small {
+  font-size: 12px;
+  color: #607780;
+}
+.workflow-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.workflow-evidence {
+  margin: 12px 0;
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.material-findings {
+  padding-left: 18px;
+  font-size: 13px;
+  color: #855d25;
+  line-height: 1.55;
+}
+.material-card .coverage-details {
+  width: 100%;
+}
+.material-card small {
+  color: #607780;
+  font-size: 11px;
+}
+@media (max-width: 640px) {
+  .workflow-group {
+    flex-wrap: wrap;
+    padding: 14px;
+  }
+  .workflow-group > div {
+    flex-basis: calc(100% - 40px);
+  }
+  .workflow-group > button {
+    margin-left: 36px;
+  }
+  .workflow-summary {
+    padding: 14px;
+  }
+  .workflow-row {
+    flex-wrap: wrap;
+    gap: 4px 8px;
+  }
+  .workflow-row > span {
+    flex-basis: calc(100% - 24px);
+  }
+  .workflow-task-list > article {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .workflow-task-list > article > div {
+    flex-basis: 100%;
+  }
+}
