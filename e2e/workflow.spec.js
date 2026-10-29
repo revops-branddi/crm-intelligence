@@ -727,7 +727,7 @@ test('finishes resumable spreadsheet reads before calling the model', async ({ p
   await page.getByLabel('ID do negócio').fill('7');
   await page.getByRole('button', { name: 'Analisar negócio', exact: true }).click();
   await page.getByRole('button', { name: 'Atualizar briefing', exact: true }).click();
-  await expect(page.getByText('Briefing atualizado.', { exact: true })).toBeVisible();
+  await expect(page.getByRole('status')).toContainText('Briefing atualizado.');
   expect(
     calls.filter((c) => ['readSpreadsheets', 'answer'].includes(c.action)).map((c) => c.action),
   ).toEqual(['readSpreadsheets', 'readSpreadsheets', 'readSpreadsheets', 'answer']);
