@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Radar, FileChartColumn, ArrowLeft, RefreshCw, CheckCircle2 } from 'lucide-react';
 import { apiRequest } from '../services/api';
+import { ScopeForm } from './PreparationWorkflow';
+import { DetailSheet } from './DetailSheet';
 import './project-workspace.css';
 const names = { serp: 'SERP Monitor', reports: 'Report Engine' };
 const labels = {
@@ -21,6 +23,19 @@ const split = (s) =>
     .map((x) => x.trim())
     .filter(Boolean);
 const date = (s) => (s ? new Date(s).toLocaleString('pt-BR') : 'Não informado');
+const sourceStatus = (s) =>
+  ({
+    completed: 'Concluída',
+    ready: 'Pronto',
+    running: 'Em execução',
+    pending: 'Na fila',
+    generating: 'Gerando',
+    failed: 'Falhou',
+    review_needed: 'Revisão necessária',
+    low_volume: 'Poucos resultados',
+  })[s] ||
+  s ||
+  'Não informado';
 function Facts({ system, data }) {
   const op = data.operations[system];
   if (op?.status !== 'read')
@@ -35,12 +50,18 @@ function Facts({ system, data }) {
         {op.facts.campaigns.length ? (
           op.facts.campaigns.map((c) => (
             <article className="project-fact" key={c.id}>
-              <h4>{c.id}</h4>
+              <h4>{c.created_at ? `Coleta de ${date(c.created_at)}` : 'Coleta registrada'}</h4>
               <p>{c.configuration.keywords?.join(' · ') || 'Termos não informados'}</p>
               <p>
-                {c.configuration.cities?.join(' · ') || 'Cidades não informadas'} ·{' '}
-                {c.configuration.devices?.join(', ')}
+                {c.configuration.cities?.length ?? '—'} cidades ·{' '}
+                {c.configuration.devices?.length ?? '—'} dispositivos
               </p>
+              <details>
+                <summary>Ver configuração completa</summary>
+                <p>{c.id}</p>
+                <p>{c.configuration.cities?.join(' · ')}</p>
+                <p>{c.configuration.devices?.join(', ')}</p>
+              </details>
               <dl>
                 <div>
                   <dt>Na fila</dt>
@@ -48,7 +69,7 @@ function Facts({ system, data }) {
                 </div>
                 <div>
                   <dt>Última execução</dt>
-                  <dd>{c.executions[0]?.status || 'Não localizada'}</dd>
+                  <dd>{sourceStatus(c.executions[0]?.status)}</dd>
                 </div>
                 <div>
                   <dt>Buscas concluídas</dt>
@@ -80,7 +101,7 @@ function Facts({ system, data }) {
             p.reports.map((r) => (
               <div key={r.slug}>
                 <p>
-                  {r.brand || r.slug} · {r.status || 'Estado não informado'}
+                  {r.brand || r.slug} · {sourceStatus(r.status)}
                 </p>
                 <p>
                   Geração: {date(r.generated_at)} ·{' '}
@@ -169,14 +190,14 @@ function ScopeSummary({ p }) {
     </dl>
   );
 }
-function Proposal({ system, data, onPrepare, busy }) {
+function Proposal({ system, data, onPrepare, onConfirmScope, busy }) {
   const camps = data.operations.serp?.facts?.campaigns || [];
   const reports =
     data.operations.reports?.facts?.products.find((p) => p.product === 'bb')?.reports || [];
   const first = camps[0],
     report = reports.find((r) => r.linked_in_crm) || reports[0];
-  const scope = data.scope;
-  const [form, setForm] = useState({
+  const scope = data.scope || data.defaults || { brands: [], domains: [] };
+  const [values, setForm] = useState({
     brand: scope?.brands?.[0] || '',
     domain: scope?.domains?.[0] || '',
     keywords: first?.configuration.keywords?.join(', ') || '',
@@ -192,6 +213,11 @@ function Proposal({ system, data, onPrepare, busy }) {
     assigneeId: data.defaultAssigneeId,
     reason: '',
   });
+  const form = {
+    ...values,
+    brand: scope.brands.includes(values.brand) ? values.brand : scope.brands[0] || '',
+    domain: scope.domains.includes(values.domain) ? values.domain : scope.domains[0] || '',
+  };
   const change = (key, value) => setForm((f) => ({ ...f, [key]: value }));
   const [error, setError] = useState('');
   const submit = async (e) => {
@@ -227,15 +253,19 @@ function Proposal({ system, data, onPrepare, busy }) {
       setError(e.message);
     }
   };
-  if (!scope?.confirmedAt)
-    return (
-      <p className="briefing-note">
-        Confirme marca, domínio e produto em <strong>Pendências → Confirmar escopo</strong> para
-        liberar uma proposta de execução.
-      </p>
-    );
   return (
     <form onSubmit={submit} className="project-proposal">
+      {!data.scope?.confirmedAt && (
+        <div className="briefing-note">
+          <p>
+            Você pode personalizar os parâmetros abaixo. Confirme o escopo para salvar a proposta;
+            nenhuma ação será executada nesta etapa.
+          </p>
+          <button type="button" className="secondary" disabled={busy} onClick={onConfirmScope}>
+            Confirmar escopo aqui
+          </button>
+        </div>
+      )}
       <div className="project-form-grid">
         <label>
           Marca
@@ -402,12 +432,20 @@ function Proposal({ system, data, onPrepare, busy }) {
           {error}
         </p>
       )}
+      <div className="project-plan-summary" role="status">
+        {system === 'serp'
+          ? `${split(form.keywords).length} termos × ${form.cities.split('\n').filter((c) => c.trim()).length} cidades × ${form.devices === 'both' ? 2 : 1} dispositivos × ${form.rounds} rodadas = ${split(form.keywords).length * form.cities.split('\n').filter((c) => c.trim()).length * (form.devices === 'both' ? 2 : 1) * Number(form.rounds)} buscas planejadas. Teto: ${form.maxRequests} consultas, incluindo tentativas.`
+          : `Brand Bidding · últimos ${form.lookbackDays} dias · ${split(form.keywords).length} termos · 1 campanha selecionada.`}
+      </div>
       <p className="briefing-muted">
         {system === 'serp'
           ? 'A coleta usa uma campanha própria, com limite e prazo. Não dispara relatório, mensagem ou mudança de etapa.'
           : 'Reprocessamento Brand Bidding com as evidências selecionadas. Mantém as regras de revisão e preservação do relatório.'}
       </p>
-      <button className="primary" disabled={busy || !data.enabled[system]}>
+      <button
+        className="primary"
+        disabled={busy || !data.enabled[system] || !data.scope?.confirmedAt}
+      >
         {busy ? 'Conferindo dados…' : 'Revisar aprovação individual'}
       </button>
       {!data.enabled[system] && <p>Execução indisponível nesta conta.</p>}
@@ -420,7 +458,42 @@ export function ProjectWorkspace({ snapshot, system, onOpen, onBack, onComplete 
     [error, setError] = useState(''),
     [busy, setBusy] = useState(false),
     [consent, setConsent] = useState(false),
-    [tab, setTab] = useState('analysis');
+    [tab, setTab] = useState('analysis'),
+    [scopeData, setScopeData] = useState(null),
+    [scopeError, setScopeError] = useState('');
+  const openScope = async () => {
+    setBusy(true);
+    setScopeError('');
+    try {
+      setScopeData(await apiRequest('preparation', { snapshotId: snapshot.id }));
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const saveScope = async (action, input) => {
+    setBusy(true);
+    setScopeError('');
+    try {
+      const result = await apiRequest(action, { snapshotId: snapshot.id, ...input });
+      setData((d) => ({ ...d, scope: result.scope }));
+      setScopeData(null);
+    } catch (e) {
+      if (e.code === 'workflow_conflict') {
+        try {
+          setScopeData(await apiRequest('preparation', { snapshotId: snapshot.id }));
+        } catch {
+          /* preserve the entered fields */
+        }
+        setScopeError(
+          'A preparação foi atualizada. Seus campos foram mantidos; revise e salve novamente.',
+        );
+      } else setScopeError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
   useEffect(() => {
     if (!system) return;
     let live = true;
@@ -573,6 +646,25 @@ export function ProjectWorkspace({ snapshot, system, onOpen, onBack, onComplete 
           </nav>
           {tab === 'analysis' && (
             <>
+              <div className="project-recommendations">
+                <h3>Orientação para este deal</h3>
+                {(data.recommendations || [])
+                  .filter((r) => r.id.startsWith(`operation:${system}:`))
+                  .map((r) => (
+                    <div key={r.id}>
+                      <strong>{r.title}</strong>
+                      <p>{r.found}</p>
+                    </div>
+                  ))}
+                {!(data.recommendations || []).some((r) =>
+                  r.id.startsWith(`operation:${system}:`),
+                ) && (
+                  <p>
+                    Nenhuma mudança automática recomendada pela consulta atual. Você pode
+                    personalizar uma ação e revisar o escopo antes de aprovar.
+                  </p>
+                )}
+              </div>
               <Facts system={system} data={data} />
               <button
                 className="primary"
@@ -587,7 +679,14 @@ export function ProjectWorkspace({ snapshot, system, onOpen, onBack, onComplete 
             </>
           )}
           {tab === 'custom' && (
-            <Proposal key={system} system={system} data={data} onPrepare={prepare} busy={busy} />
+            <Proposal
+              key={system}
+              system={system}
+              data={data}
+              onPrepare={prepare}
+              onConfirmScope={openScope}
+              busy={busy}
+            />
           )}{' '}
           {tab === 'execution' &&
             (job ? (
@@ -600,6 +699,10 @@ export function ProjectWorkspace({ snapshot, system, onOpen, onBack, onComplete 
                 <ScopeSummary p={job.parameters} />
                 {job.status === 'draft' ? (
                   <>
+                    <p className="briefing-muted">
+                      Proposta salva. Revise e aprove até {date(job.expires_at)}. Mudanças nas
+                      fontes exigem nova revisão.
+                    </p>
                     <label className="project-consent">
                       <input
                         type="checkbox"
@@ -670,10 +773,26 @@ export function ProjectWorkspace({ snapshot, system, onOpen, onBack, onComplete 
             ) : (
               <p>Escolha uma ação salva ou personalize um reprocessamento.</p>
             ))}
+          {scopeData && (
+            <DetailSheet
+              title="Escopo da negociação"
+              subtitle="Confirmar antes de preparar a execução"
+              onClose={() => {
+                if (!busy) setScopeData(null);
+              }}
+            >
+              {scopeError && (
+                <p role="alert" className="briefing-note">
+                  {scopeError}
+                </p>
+              )}
+              <ScopeForm data={scopeData} busy={busy} onSave={saveScope} />
+            </DetailSheet>
+          )}
           <details className="project-history">
-            <summary>Histórico de ações deste projeto</summary>
+            <summary>Propostas salvas e histórico</summary>
             {data.executions
-              .filter((e) => e.system === system && e.status !== 'draft')
+              .filter((e) => e.system === system)
               .map((e) => (
                 <button
                   key={e.id}

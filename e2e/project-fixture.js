@@ -1,4 +1,4 @@
-export function projectFixture() {
+export function projectFixture({ scopeConfirmed = true } = {}) {
   const jobs = [];
   const campaign = {
     id: 'synthetic-c1',
@@ -49,6 +49,8 @@ export function projectFixture() {
       },
     },
   };
+  context.defaults = { brands: ['Lume'], domains: ['lume.example.test'] };
+  if (!scopeConfirmed) context.scope = null;
   return function (request) {
     if (request.action === 'projectContext') return { ...context, executions: [...jobs] };
     if (request.action === 'prepareProjectAction') {

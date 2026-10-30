@@ -107,10 +107,11 @@ async function fixture(
     savedAnswers,
     spreadsheetBatches = 0,
     operational = false,
+    projectScopeConfirmed = true,
   } = {},
 ) {
   const calls = [];
-  const project = projectFixture();
+  const project = projectFixture({ scopeConfirmed: projectScopeConfirmed });
   const cachedAnswer = answer('overview');
   if (rich) cachedAnswer.answer.sections = richSections();
   const workflowUser = { id: '11111111-1111-4111-8111-111111111111', email: 'tester@branddi.test' };
@@ -869,4 +870,65 @@ test('project tools keep SERP and report approvals independent and show durable 
     'São Paulo,Brazil',
     'Campinas,Brazil',
   ]);
+});
+
+test('scope conflict refreshes the revision without losing typed fields', async ({ page }) => {
+  await fixture(page, { cached: true, company: true });
+  let conflict = true;
+  await page.route('**/api/intelligence', async (route) => {
+    if (route.request().postDataJSON().action === 'saveScope' && conflict) {
+      conflict = false;
+      return route.fulfill({
+        status: 409,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'A preparação mudou.', code: 'workflow_conflict' }),
+      });
+    }
+    return route.fallback();
+  });
+  await page.getByLabel('ID do negócio').fill('7');
+  await page.getByRole('button', { name: 'Analisar negócio', exact: true }).click();
+  await page.getByRole('button', { name: 'Definir escopo', exact: true }).click();
+  await page.getByLabel('Produto', { exact: true }).fill('Brand Bidding — piloto de validação');
+  await page.getByRole('button', { name: 'Salvar escopo' }).click();
+  await expect(page.getByRole('alert')).toContainText('Seus campos foram mantidos');
+  await expect(page.getByLabel('Produto', { exact: true })).toHaveValue(
+    'Brand Bidding — piloto de validação',
+  );
+  await page.getByRole('button', { name: 'Salvar escopo' }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.getByRole('region', { name: 'Aviso de grupo' })).toContainText(
+    'piloto de validação',
+  );
+});
+
+test('monitoring can be customized before scope confirmation and saved as an unapproved draft', async ({
+  page,
+}) => {
+  const calls = await fixture(page, { cached: true, company: true, projectScopeConfirmed: false });
+  await page.getByLabel('ID do negócio').fill('7');
+  await page.getByRole('button', { name: 'Analisar negócio', exact: true }).click();
+  await page.getByRole('button', { name: /SERP Monitor Cobertura/ }).click();
+  await page.getByRole('button', { name: 'Personalizar reprocessamento' }).click();
+  await page.getByLabel('Cidades, uma por linha').fill('São Paulo,Brazil\nRecife,Brazil');
+  await page.getByLabel('Teto total de consultas').fill('48');
+  await expect(page.getByRole('button', { name: 'Revisar aprovação individual' })).toBeDisabled();
+  await page.getByRole('button', { name: 'Confirmar escopo aqui' }).click();
+  await page.getByRole('dialog').getByLabel('Produto', { exact: true }).fill('Brand Bidding');
+  await page.getByRole('button', { name: 'Salvar escopo' }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.getByLabel('Cidades, uma por linha')).toHaveValue(
+    'São Paulo,Brazil\nRecife,Brazil',
+  );
+  await expect(page.getByLabel('Teto total de consultas')).toHaveValue('48');
+  await page
+    .getByLabel('Objetivo deste reprocessamento')
+    .fill('Validar nova captura antes de ampliar o alcance.');
+  await page.getByRole('button', { name: 'Revisar aprovação individual' }).click();
+  await expect(
+    page.getByRole('button', { name: 'Aprovar e executar no SERP Monitor' }),
+  ).toBeDisabled();
+  expect(calls.filter((c) => c.action === 'approveProjectAction')).toHaveLength(0);
+  await page.getByText('Propostas salvas e histórico', { exact: true }).click();
+  await expect(page.getByRole('button', { name: /Aguardando aprovação/ })).toBeVisible();
 });

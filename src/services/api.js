@@ -25,6 +25,7 @@ export async function apiRequest(action, fields = {}, signal) {
   if (!response.ok) {
     const error = new Error(body.error || 'Falha na operação.');
     error.status = response.status;
+    error.code = body.code;
     error.retryAfter = body.retryAfter;
     throw error;
   }

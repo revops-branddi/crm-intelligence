@@ -116,6 +116,35 @@
 .project-proposal > p {
   margin: 18px 0;
 }
+.project-plan-summary,
+.project-recommendations {
+  padding: 16px;
+  margin: 16px 0;
+  border: 1px solid #ccdce0;
+  border-radius: 10px;
+  background: #edf5f3;
+  line-height: 1.5;
+}
+.project-recommendations h3 {
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+.project-recommendations p {
+  margin-top: 4px;
+}
+.project-recommendations > div + div {
+  margin-top: 12px;
+}
+.project-workspace summary {
+  cursor: pointer;
+  font-size: 0.875rem;
+  color: #267d79;
+}
+.project-workspace button:focus-visible,
+.project-workspace summary:focus-visible {
+  outline: 2px solid #267d79;
+  outline-offset: 3px;
+}
 .project-consent {
   display: flex !important;
   flex-direction: row !important;

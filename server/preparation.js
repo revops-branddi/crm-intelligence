@@ -1,4 +1,5 @@
 import { checked, HttpError } from './errors.js';
+import { isDeepStrictEqual } from 'node:util';
 import { idOf } from './pipedrive.js';
 import { companyContext } from './company-context.js';
 import { dealMaterials } from './materials.js';
@@ -287,16 +288,20 @@ export async function preparationAction(
   );
   if (readOnly && input.action !== 'preparation')
     throw error('Abra a extração mais recente para atualizar a preparação.');
+  const editing = ['saveScope', 'savePreparationTask'].includes(input.action);
+  // Compare the version the user read before deriving updated source facts.
+  if (editing && input.revision !== row.revision) throw conflict();
   const computed = () =>
     preparationItems({ snapshot, sources, record, state, defaultAssignee, pages });
   if (!readOnly) {
     state.tasks = synchronizeTasks(state.tasks, computed().items);
     state.sourceStartedAt = snapshot.started_at;
     state.snapshotId = snapshot.id;
-    if (JSON.stringify(state) !== JSON.stringify(row.state)) row = await saveRow(db, row, state);
+    // JSONB reorders object keys and omits undefined values. Neither is a change.
+    if (!editing && !isDeepStrictEqual(JSON.parse(JSON.stringify(state)), row.state))
+      row = await saveRow(db, row, state);
   }
-  if (['saveScope', 'savePreparationTask'].includes(input.action)) {
-    if (input.revision !== row.revision) throw conflict();
+  if (editing) {
     const assignee = assignees.find((p) => p.id === input.assigneeId);
     if (!assignee) throw error('Escolha um responsável ativo no Pipedrive.');
     if (input.action === 'saveScope') {
@@ -325,6 +330,10 @@ export async function preparationAction(
       state.tasks.scope.assignee = assignee;
     } else {
       const task = state.tasks[input.taskId];
+      if (task?.fingerprint !== row.state.tasks?.[input.taskId]?.fingerprint) {
+        await saveRow(db, row, state);
+        throw conflict();
+      }
       if (!task?.active || task.kind === 'scope')
         throw error('Selecione uma pendência ativa. Para o escopo, use Confirmar escopo.');
       if (['resolved', 'dismissed'].includes(input.status) && input.note.trim().length < 10)
