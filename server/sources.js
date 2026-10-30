@@ -55,10 +55,16 @@ export function buildSources(pages) {
           : ['attachment', 'attachmentText', 'materialText'].includes(page.kind)
             ? `Arquivo: ${record.name}${record.url ? `\nURL: ${record.url}\nConsultado em: ${record.readAt}` : ''}\nLeitura: ${record.textStatus}\n${record.text || record.note || ''}`
             : pretty(record, definitions);
+      const liveGd =
+        page.kind === 'materialText' &&
+        /^https:\/\/report\.branddi\.com\/[a-zA-Z0-9_.-]+\/gd\/?$/.test(record.url || '');
       // Lossless text chunks: no prefix truncation. Originals remain in crm_raw_pages.
       const partSize = 6000;
       for (let start = 0; start < text.length; start += partSize) {
-        const content = text.slice(start, start + partSize);
+        const original = text.slice(start, start + partSize);
+        const content = liveGd
+          ? `Natureza da fonte: visão dinâmica GD. Datas de geração impressas nesta página são o relógio da agregação consultada; não comprovam geração/publicação de artefato nem captura recente. Descreva como consultado em ${record.readAt || 'data não informada'}.\n${original}`
+          : original;
         sources.push({
           id: `${base}:${start / partSize}`,
           kind:

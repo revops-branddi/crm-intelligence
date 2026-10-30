@@ -459,3 +459,33 @@ test('GD live aggregation date stays distinct from report generation and does no
     false,
   );
 });
+
+test('every selected GD page chunk distinguishes the live view from persisted report generation', () => {
+  const text = 'Relatório gerado em 30/10/2026. ' + 'Evidência preservada. '.repeat(700);
+  const pages = [
+    {
+      kind: 'materialText',
+      task_key: 'gd-page',
+      payload: {
+        data: {
+          name: 'GD',
+          url: 'https://report.branddi.com/marca/gd',
+          readAt: '2026-10-30T00:00:00Z',
+          textStatus: 'readable',
+          text,
+        },
+      },
+    },
+  ];
+  const sources = buildSources(pages);
+  assert.ok(sources.length > 1);
+  for (const source of sources) {
+    assert.match(source.text, /^Natureza da fonte: visão dinâmica GD/);
+    assert.match(source.text, /não comprovam geração\/publicação de artefato nem captura recente/);
+  }
+  assert.ok(
+    sources.some((s) => s.text.includes('Relatório gerado em 30/10/2026.')),
+    'raw text stays preserved with interpretation metadata',
+  );
+  assert.equal(pages[0].payload.data.text, text);
+});
