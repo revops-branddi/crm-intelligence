@@ -118,6 +118,31 @@ test('a forced read in the same millisecond supersedes the previous evidence eve
   assert.equal(latest.payload.data.facts.campaigns[0].queued_tasks, 1);
   assert.equal(Date.parse(latest.payload.data.readAt), now + 1);
 });
+test('queue schedules survive the reader boundary and malformed timestamps fail explicitly', async () => {
+  const c = setup();
+  const detail = {
+    observed_at: new Date(now).toISOString(),
+    ready_tasks: 0,
+    scheduled_tasks: 162,
+    processing_tasks: 0,
+    stale_processing_tasks: 0,
+    unknown_schedule_tasks: 0,
+    next_scheduled_at: new Date(now + 3600000).toISOString(),
+    oldest_ready_at: null,
+    last_updated_at: null,
+  };
+  c.f.monitoring.campaigns[0].queue_detail = detail;
+  c.f.monitoring.campaigns[0].queued_tasks = 162;
+  const result = await readSavedOperations(c.db, snapshot, c.pages, c.options);
+  assert.deepEqual(result.find((r) => r.id === 'serp').facts.campaigns[0].queue_detail, detail);
+  c.f.monitoring.campaigns[0].queue_detail.next_scheduled_at = 'invalid';
+  const bad = await readSavedOperations(c.db, snapshot, c.pages, {
+    ...c.options,
+    force: true,
+    now: now + 1,
+  });
+  assert.notEqual(bad.find((r) => r.id === 'serp').status, 'read');
+});
 test('all deals use exact identity GETs, dedicated headers, bounded timeout and persisted secret-free evidence', async () => {
   for (const dealId of [17, 804, 99031]) {
     const c = setup();

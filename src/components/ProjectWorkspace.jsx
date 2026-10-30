@@ -84,6 +84,47 @@ function Facts({ system, data }) {
                   <dd>{c.executions[0]?.tasks_with_ads ?? '—'}</dd>
                 </div>
               </dl>
+              {c.queued_tasks > 0 &&
+                (c.queue_detail ? (
+                  <div className="briefing-note">
+                    <p>
+                      {c.queue_detail.scheduled_tasks} agendadas · {c.queue_detail.ready_tasks}{' '}
+                      aguardando processamento · {c.queue_detail.processing_tasks} em execução
+                    </p>
+                    {c.queue_detail.next_scheduled_at && (
+                      <p>
+                        Próximo horário: {date(c.queue_detail.next_scheduled_at)}. O início depende
+                        da disponibilidade do processador.
+                      </p>
+                    )}
+                    {c.queue_detail.oldest_ready_at && (
+                      <p>
+                        Há tarefas liberadas desde {date(c.queue_detail.oldest_ready_at)} aguardando
+                        o processador.
+                      </p>
+                    )}
+                    {c.queue_detail.stale_processing_tasks > 0 && (
+                      <p>
+                        {c.queue_detail.stale_processing_tasks} tarefas com reserva vencida;
+                        precisam ser retomadas pelo processador.
+                      </p>
+                    )}
+                    {c.queue_detail.unknown_schedule_tasks > 0 && (
+                      <p>
+                        Horário não confirmado para {c.queue_detail.unknown_schedule_tasks} tarefas.
+                      </p>
+                    )}
+                    <p>
+                      Consulta: {date(c.queue_detail.observed_at)}. Nova coleta liberada quando a
+                      fila zerar.
+                    </p>
+                  </div>
+                ) : (
+                  <p className="briefing-note">
+                    Horários da fila não disponíveis nesta consulta. Atualize os dados para
+                    conferir.
+                  </p>
+                ))}
             </article>
           ))
         ) : (
