@@ -180,7 +180,7 @@ function Proposal({ system, data, onPrepare, busy }) {
     brand: scope?.brands?.[0] || '',
     domain: scope?.domains?.[0] || '',
     keywords: first?.configuration.keywords?.join(', ') || '',
-    cities: first?.configuration.cities?.join(', ') || 'São Paulo',
+    cities: first?.configuration.cities?.slice(0, 3).join('\n') || 'São Paulo,Brazil',
     devices: 'both',
     rounds: 2,
     windowHours: 12,
@@ -203,7 +203,10 @@ function Proposal({ system, data, onPrepare, busy }) {
         ? {
             ...common,
             domains: [form.domain],
-            cities: split(form.cities),
+            cities: form.cities
+              .split('\n')
+              .map((c) => c.trim())
+              .filter(Boolean),
             devices: form.devices === 'both' ? ['desktop', 'mobile'] : [form.devices],
             rounds: Number(form.rounds),
             windowHours: Number(form.windowHours),
@@ -298,8 +301,8 @@ function Proposal({ system, data, onPrepare, busy }) {
         {system === 'serp' ? (
           <>
             <label className="full">
-              Cidades, separadas por vírgula
-              <input
+              Cidades, uma por linha (até 10)
+              <textarea
                 required
                 maxLength={1000}
                 value={form.cities}

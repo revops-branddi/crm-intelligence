@@ -865,4 +865,8 @@ test('project tools keep SERP and report approvals independent and show durable 
   expect(
     calls.filter((c) => c.action === 'prepareProjectAction').map((c) => c.parameters.system),
   ).toEqual(['serp', 'reports']);
+  expect(calls.find((c) => c.action === 'prepareProjectAction').parameters.cities).toEqual([
+    'São Paulo,Brazil',
+    'Campinas,Brazil',
+  ]);
 });

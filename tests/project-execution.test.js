@@ -201,6 +201,21 @@ test('scope, ceiling, ongoing capture, report terms and clock semantics are vali
     keywords: ['wrong'],
   };
   assert.throws(() => validateParameters(p, scope, ops));
+  ops.reports.facts.products[0] = {
+    product: 'bb',
+    state: 'found',
+    linked_in_crm: true,
+    reports: [{ slug: p.slug, brand: 'Outra marca', domain: p.domain }],
+  };
+  assert.throws(
+    () =>
+      validateParameters(
+        { ...p, mode: 'regenerate', keywords: campaign.configuration.keywords },
+        scope,
+        ops,
+      ),
+    /corresponder/,
+  );
   const a = executionProof(ops, scope, { org_id: 9 }, 'reports');
   ops.serp.facts.read_at = 'later';
   assert.equal(executionProof(ops, scope, { org_id: 9 }, 'reports'), a);

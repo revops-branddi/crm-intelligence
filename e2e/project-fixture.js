@@ -3,7 +3,11 @@ export function projectFixture() {
   const campaign = {
     id: 'synthetic-c1',
     queued_tasks: 0,
-    configuration: { keywords: ['lume'], cities: ['São Paulo'], devices: ['desktop'] },
+    configuration: {
+      keywords: ['lume'],
+      cities: ['São Paulo,Brazil', 'Campinas,Brazil'],
+      devices: ['desktop'],
+    },
     executions: [
       { status: 'completed', planned_tasks: 12, queue_completed_tasks: 12, tasks_with_ads: 1 },
     ],

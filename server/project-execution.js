@@ -114,6 +114,12 @@ export function validateParameters(params, scope, ops) {
     const report = product.reports.find((r) => r.slug === params.slug);
     if (params.mode === 'regenerate' && !report)
       fail('Escolha um relatório confirmado para este deal.');
+    if (
+      report &&
+      (report.domain?.toLowerCase().trim() !== params.domain ||
+        report.brand?.toLowerCase().trim() !== params.brand.toLowerCase().trim())
+    )
+      fail('A marca e o domínio devem corresponder ao relatório selecionado.');
     if (params.mode === 'generate' && (product.reports.length || product.linked_in_crm))
       fail('Já existe relatório; selecione o reprocessamento.');
     if (params.mode === 'generate' && !params.slug.startsWith('crm-'))
