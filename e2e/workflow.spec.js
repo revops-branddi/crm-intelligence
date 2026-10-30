@@ -996,3 +996,52 @@ test('report starts with combined evidence, permits manual selection and keeps a
   ).toBeDisabled();
   await expect(page.getByText(/Prioriza mais anunciantes/)).toBeVisible();
 });
+
+test('existing ready queue can be prioritized only after its own explicit approval', async ({
+  page,
+}) => {
+  const calls = await fixture(page, {
+    cached: true,
+    company: true,
+    queueDetail: {
+      observed_at: new Date().toISOString(),
+      ready_tasks: 162,
+      eligible_ready_tasks: 162,
+      tasks_ahead: 900,
+      scheduled_tasks: 0,
+      processing_tasks: 0,
+      stale_processing_tasks: 0,
+      unknown_schedule_tasks: 0,
+      next_scheduled_at: null,
+      oldest_ready_at: '2026-10-30T12:00:00Z',
+      last_updated_at: null,
+    },
+  });
+  await page.getByLabel('ID do negócio').fill('7');
+  await page.getByRole('button', { name: 'Analisar negócio', exact: true }).click();
+  await page.getByRole('button', { name: /SERP Monitor Cobertura/ }).click();
+  await expect(page.getByText('900 tarefas elegíveis à frente desta coleta.')).toBeVisible();
+  await page.getByRole('button', { name: 'Priorizar coleta existente', exact: true }).click();
+  await page.getByRole('dialog').getByLabel('Responsável').selectOption('10');
+  await page
+    .getByRole('dialog')
+    .getByLabel('Motivo')
+    .fill('Concluir a coleta atual sem cancelar ou recriar buscas.');
+  await page.getByRole('button', { name: 'Revisar aprovação individual' }).click();
+  await expect(
+    page.getByRole('button', { name: 'Aprovar e executar no SERP Monitor' }),
+  ).toBeDisabled();
+  expect(calls.filter((c) => c.action === 'approveProjectAction')).toHaveLength(0);
+  const draft = calls.find((c) => c.action === 'prepareProjectAction');
+  expect(draft.parameters).toMatchObject({
+    system: 'serp',
+    action: 'prioritize',
+    campaignId: 'synthetic-c1',
+    expectedReadyTasks: 162,
+  });
+  expect(draft.assigneeId).toBe('10');
+  await page.getByRole('checkbox', { name: /Aprovo somente esta ação/ }).check();
+  await page.getByRole('button', { name: 'Aprovar e executar no SERP Monitor' }).click();
+  await expect(page.getByText('Pedido recebido pelo projeto.')).toBeVisible();
+  expect(calls.filter((c) => c.action === 'approveProjectAction')).toHaveLength(1);
+});

@@ -27,3 +27,14 @@ Os destinos oferecem `POST .../executions?preview=1` para validar identidade e d
 Reversão: remover as credenciais de execução e publicar o CRM anterior; manter os leitores e os recibos. Não apagar uma ação incerta nem reenviá-la: conferir o pedido original no sistema de destino. Uma função interrompida é marcada como incerta, sem presumir ausência de efeito.
 
 Validação: testes de contrato, autorização, mudança de escopo, reserva concorrente, teto de consumo, duplicação e resultados ambíguos; E2E das duas áreas com aprovações separadas.
+
+A ação **Priorizar coleta existente** tem proposta, responsável, motivo e aprovação
+individual próprios. Ela afeta apenas tarefas já liberadas da campanha escolhida,
+sem criar capturas nem alterar horários, leases, tentativas ou orçamento. O CRM
+continua bloqueando nova monitoria enquanto houver fila no deal. A origem da
+exceção é autenticada entre servidores, sem aceitar `Origin` do navegador como
+permissão. O teto automático do SERP permanece inalterado.
+
+A prova de revisão ignora apenas `queue_detail.observed_at` e a posição relativa
+na fila (`tasks_ahead`); alterações de escopo, identidade, configuração, contagens
+da campanha ou responsável continuam invalidando a aprovação.
