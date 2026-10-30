@@ -161,7 +161,8 @@ function TaskForm({ task, data, snapshot, busy, onSave, onSource }) {
           status,
           note,
           dueDate,
-          approveHelpdesk: approve,
+          approveHelpdesk: task.kind === 'issue' && approve,
+          approveRecommendation: task.kind === 'recommendation' && approve,
           ...(task.kind === 'issue' ? { draft } : {}),
         });
       }}
@@ -286,8 +287,35 @@ function TaskForm({ task, data, snapshot, busy, onSave, onSource }) {
           </a>
         </details>
       )}
+      {task.kind === 'recommendation' && (
+        <div className="briefing-note">
+          {!['resolved', 'dismissed'].includes(status) && (
+            <label className="preparation-check">
+              <input
+                type="checkbox"
+                checked={approve}
+                onChange={(e) => setApprove(e.target.checked)}
+              />
+              <span>Revisei e aprovo somente esta recomendação.</span>
+            </label>
+          )}
+          <p>
+            {task.recommendationApproval
+              ? `Aprovada em ${date(task.recommendationApproval.at)}. `
+              : ''}
+            A aprovação registra a decisão. A execução deve ser solicitada no Hub; nenhuma
+            monitoria, relatório ou alteração no CRM é disparada aqui.
+          </p>
+        </div>
+      )}
       <button type="submit" className="primary" disabled={busy || data.readOnly || !task.active}>
-        {busy ? 'Salvando…' : approve ? 'Salvar e aprovar este chamado' : 'Salvar pendência'}
+        {busy
+          ? 'Salvando…'
+          : approve
+            ? task.kind === 'recommendation'
+              ? 'Salvar e aprovar recomendação'
+              : 'Salvar e aprovar este chamado'
+            : 'Salvar pendência'}
       </button>
       <details className="coverage-details">
         <summary>Histórico desta pendência</summary>
@@ -432,6 +460,13 @@ export function PreparationWorkflow({
       )}
       {view === 'briefing' && (
         <>
+          {!!data.operations?.length && (
+            <p className="briefing-muted" aria-label="Consultas operacionais">
+              {data.operations
+                .map((item) => `${item.source}: ${item.label} · ${date(item.checkedAt)}`)
+                .join(' | ')}
+            </p>
+          )}
           {data.group && (
             <section className="workflow-group" aria-label="Aviso de grupo">
               <Building2 size={22} />
@@ -597,6 +632,9 @@ export function PreparationWorkflow({
                     {task.assignee?.name || 'Sem responsável'}
                     {task.dueDate ? ` · Prazo: ${task.dueDate}` : ''}
                     {task.approval ? ' · Chamado aprovado para revisão no Hub' : ''}
+                    {task.recommendationApproval
+                      ? ' · Recomendação aprovada; execução pendente'
+                      : ''}
                   </small>
                 </div>
                 <button className="secondary" onClick={() => select(task)}>

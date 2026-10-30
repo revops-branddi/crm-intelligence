@@ -13,6 +13,7 @@ import { dealMaterials } from './materials.js';
 import { companyContext } from './company-context.js';
 import { preparationAction } from './preparation.js';
 import { readSavedSpreadsheets, spreadsheetInventory } from './spreadsheet-reading.js';
+import { readSavedOperations } from './operational-reading.js';
 
 const uuid = z.string().uuid();
 const assigneeId = z.string().regex(/^[1-9]\d{0,14}$/);
@@ -66,6 +67,7 @@ const inputSchema = z.discriminatedUnion('action', [
     note: z.string().trim().max(2000),
     dueDate: z.union([z.literal(''), z.string().date()]).default(''),
     approveHelpdesk: z.boolean().default(false),
+    approveRecommendation: z.boolean().default(false),
     draft: z
       .object({
         title: z.string().trim().min(1).max(200),
@@ -130,6 +132,7 @@ export async function handleAction(
     clientFactory = pipedriveClient,
     generate = generateAnswer,
     materialReader,
+    operationalFetcher,
   },
 ) {
   if (input.action === 'status') {
@@ -295,6 +298,12 @@ export async function handleAction(
   if (
     ['preparation', 'saveScope', 'savePreparationTask', 'validateMaterial'].includes(input.action)
   ) {
+    await readSavedOperations(db, snapshot, pages, {
+      currentDeal: current.data,
+      env,
+      fetcher: operationalFetcher,
+    });
+    sources = buildSources(pages);
     if (input.action === 'validateMaterial') await limit(db, user.id, 'material-checks', 30, 3600);
     return preparationAction(input, {
       db,
@@ -303,6 +312,7 @@ export async function handleAction(
       sources,
       currentDeal: current.data,
       client,
+      pages,
     });
   }
   if (input.action === 'company') return companyContext(sources);
@@ -358,7 +368,14 @@ export async function handleAction(
         'Conclua a leitura das planilhas preservadas antes de gerar o briefing.',
         'pending_spreadsheets',
       );
-    await readSavedMaterials(db, snapshot, pages, materialReader);
+    await Promise.all([
+      readSavedMaterials(db, snapshot, pages, materialReader),
+      readSavedOperations(db, snapshot, pages, {
+        currentDeal: current.data,
+        env,
+        fetcher: operationalFetcher,
+      }),
+    ]);
     sources = buildSources(pages);
     const readFiles = new Set(
       spreadsheets.files.filter((f) => f.status === 'readable').map((f) => f.id),

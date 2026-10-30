@@ -4,6 +4,7 @@ import { companyContext } from './company-context.js';
 import { dealMaterials } from './materials.js';
 import { reviewItems, draftForReview } from '../src/services/briefing.js';
 import { digest, normalize, scopeDigest, validateMaterial } from './material-validation.js';
+import { operationalPreparation } from './operational-advice.js';
 
 const conflict = () =>
   new HttpError(
@@ -77,6 +78,7 @@ export function preparationItems({
   state,
   defaultAssignee,
   now = Date.now(),
+  pages = [],
 }) {
   const company = companyContext(sources),
     group = groupNotice(company);
@@ -87,10 +89,12 @@ export function preparationItems({
     organizationId: company.organizationId,
   };
   const items = [];
+  const operations = operationalPreparation(pages, sources, snapshot, referenceScope, now);
   const add = (item) =>
     items.push({
       ...item,
-      fingerprint: digest([item.title, item.found, item.citations || [], item.basis]),
+      fingerprint:
+        item.fingerprint || digest([item.title, item.found, item.citations || [], item.basis]),
       assignee: defaultAssignee,
     });
   add({
@@ -134,6 +138,7 @@ export function preparationItems({
     ['report', /relat[oó]rio|monitoria|pescaria|diagn[oó]stico/i, 'Preparar relatório'],
     ['presentation', /ppt|apresenta[çc][aã]o/i, 'Preparar apresentação'],
   ]) {
+    if (type === 'report' && operations.reportChecked) continue;
     if (!materials.some((m) => pattern.test(m.title)))
       add({
         id: `missing-${type}`,
@@ -177,6 +182,7 @@ export function preparationItems({
       id: `issue:${digest([item.title, item.citations, normalize(item.found)]).slice(0, 24)}`,
       kind: 'issue',
     });
+  for (const item of operations.items) add(item);
   return {
     company,
     group,
@@ -187,6 +193,7 @@ export function preparationItems({
       validation: effectiveMaterialCheck(m, { ...state, scope: referenceScope }, now),
     })),
     items,
+    operations: operations.summary,
   };
 }
 export function synchronizeTasks(oldTasks = {}, items, at = new Date().toISOString()) {
@@ -205,6 +212,7 @@ export function synchronizeTasks(oldTasks = {}, items, at = new Date().toISOStri
       note: old?.note || '',
       dueDate: old?.dueDate || '',
       approval: changed ? null : old?.approval || null,
+      recommendationApproval: changed ? null : old?.recommendationApproval || null,
       draft: changed ? null : old?.draft || null,
       changedEvidence: Boolean(changed || old?.changedEvidence),
       updatedAt: old?.updatedAt || at,
@@ -239,7 +247,7 @@ async function saveRow(db, row, state) {
 }
 export async function preparationAction(
   input,
-  { db, user, snapshot, sources, currentDeal, client, validate = validateMaterial },
+  { db, user, snapshot, sources, currentDeal, client, validate = validateMaterial, pages = [] },
 ) {
   const people = (await client.get('/api/v1/users')).data || [];
   const assignees = people
@@ -279,7 +287,8 @@ export async function preparationAction(
   );
   if (readOnly && input.action !== 'preparation')
     throw error('Abra a extração mais recente para atualizar a preparação.');
-  const computed = () => preparationItems({ snapshot, sources, record, state, defaultAssignee });
+  const computed = () =>
+    preparationItems({ snapshot, sources, record, state, defaultAssignee, pages });
   if (!readOnly) {
     state.tasks = synchronizeTasks(state.tasks, computed().items);
     state.sourceStartedAt = snapshot.started_at;
@@ -329,6 +338,15 @@ export async function preparationAction(
         throw error(
           'Confirme uma ocorrência, com justificativa e status pendente, antes de aprovar o chamado.',
         );
+      if (
+        input.approveRecommendation &&
+        (task.kind !== 'recommendation' ||
+          input.note.trim().length < 10 ||
+          !['open', 'in_progress'].includes(input.status))
+      )
+        throw error(
+          'Revise uma recomendação individual, com responsável e justificativa, antes de aprová-la.',
+        );
       const draft =
         input.draft ||
         task.draft ||
@@ -362,12 +380,27 @@ export async function preparationAction(
           : keepApproval
             ? task.approval
             : null,
+        recommendationApproval: input.approveRecommendation
+          ? {
+              by: user.email || user.id,
+              at: new Date().toISOString(),
+              fingerprint: task.fingerprint,
+              assigneeId: assignee.id,
+            }
+          : !['resolved', 'dismissed'].includes(input.status) &&
+              task.recommendationApproval?.assigneeId === assignee.id
+            ? task.recommendationApproval
+            : null,
       };
       state.history = history(
         state,
         {
           taskId: task.id,
-          action: input.approveHelpdesk ? 'approve_helpdesk' : 'task',
+          action: input.approveHelpdesk
+            ? 'approve_helpdesk'
+            : input.approveRecommendation
+              ? 'approve_recommendation'
+              : 'task',
           text: `${task.title} · ${input.status} · ${assignee.name}`,
           note: input.note.trim(),
         },
@@ -423,6 +456,7 @@ export async function preparationAction(
     scope: context.scope,
     defaults: scopeDefaults(snapshot, context.company),
     materials: context.materials,
+    operations: context.operations,
     assignees,
     defaultAssignee,
     tasks: Object.values(state.tasks || {}),

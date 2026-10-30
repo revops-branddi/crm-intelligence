@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { convert } from 'html-to-text';
 import { calculateHardMetrics, parsePipedriveDate } from '../src/services/metrics.js';
+import { operationalText } from './operational-advice.js';
 export const normalizeText = (value) =>
   String(value ?? '')
     .replace(/\s+/g, ' ')
@@ -48,9 +49,12 @@ export function buildSources(pages) {
       if (record === null || record === undefined) continue;
       const rawId = record.id || record.data?.id || index;
       const base = `${page.kind}:${page.task_key.slice(0, 12)}:${rawId}`;
-      const text = ['attachment', 'attachmentText', 'materialText'].includes(page.kind)
-        ? `Arquivo: ${record.name}${record.url ? `\nURL: ${record.url}\nConsultado em: ${record.readAt}` : ''}\nLeitura: ${record.textStatus}\n${record.text || record.note || ''}`
-        : pretty(record, definitions);
+      const text =
+        page.kind === 'operational'
+          ? operationalText(record)
+          : ['attachment', 'attachmentText', 'materialText'].includes(page.kind)
+            ? `Arquivo: ${record.name}${record.url ? `\nURL: ${record.url}\nConsultado em: ${record.readAt}` : ''}\nLeitura: ${record.textStatus}\n${record.text || record.note || ''}`
+            : pretty(record, definitions);
       // Lossless text chunks: no prefix truncation. Originals remain in crm_raw_pages.
       const partSize = 6000;
       for (let start = 0; start < text.length; start += partSize) {
@@ -78,6 +82,8 @@ export function buildSources(pages) {
             : undefined,
           fileId: record.fileId,
           materialUrl: page.kind === 'materialText' ? record.url : undefined,
+          operationalKey: page.kind === 'operational' ? record.id : undefined,
+          operationalStatus: page.kind === 'operational' ? record.status : undefined,
           contentHash:
             ['attachment', 'attachmentText', 'materialText'].includes(page.kind) && record.text
               ? createHash('sha256').update(record.text).digest('hex')
@@ -143,6 +149,12 @@ export function selectContext(sources, question, maximum = 100000, recentPerKind
       .map((s) => String(s.fileId)),
   );
   const latestMaterial = new Map();
+  const latestOperational = new Map();
+  for (const s of sources.filter((s) => s.operationalKey)) {
+    const previous = latestOperational.get(s.operationalKey);
+    if (!previous || Date.parse(s.date) > Date.parse(previous.date))
+      latestOperational.set(s.operationalKey, s);
+  }
   for (const s of sources.filter((s) => s.materialUrl)) {
     const previous = latestMaterial.get(s.materialUrl);
     if (!previous || Date.parse(s.date) > Date.parse(previous.date))
@@ -152,6 +164,8 @@ export function selectContext(sources, question, maximum = 100000, recentPerKind
     .filter(
       (source) =>
         !/Fields$/.test(source.kind) &&
+        (!source.operationalKey ||
+          latestOperational.get(source.operationalKey)?.taskKey === source.taskKey) &&
         (!source.materialUrl ||
           latestMaterial.get(source.materialUrl)?.taskKey === source.taskKey) &&
         !(source.primary === false && canonical.has(`${source.entityKind}:${source.recordId}`)) &&
@@ -197,6 +211,12 @@ export function selectContext(sources, question, maximum = 100000, recentPerKind
   // of general activity history. Directory entries are not evidence of ownership.
   for (const kind of ['deal', 'organization', 'users', 'person'])
     for (const source of candidates.filter((source) => source.kind === kind)) add(source);
+  // Current operational observations precede old CRM summaries, under a bounded budget.
+  const operationalBudget = used + maximum * 0.12;
+  for (const source of candidates
+    .filter((s) => s.kind === 'operational')
+    .sort((a, b) => a.part - b.part))
+    if (used + JSON.stringify(source).length <= operationalBudget) add(source);
   for (const kind of ['notes', 'activities', 'mailIndex', 'flow', 'attachment']) {
     const first = ranked.find((entry) => entry.source.kind === kind);
     if (first) add(first.source);
@@ -284,7 +304,12 @@ export function selectContext(sources, question, maximum = 100000, recentPerKind
       selectedChunks: selected.length,
       omittedChunks: sources.length - selected.length,
       characters: used,
-      selection: 'briefing-notes-primary-history-and-readable-files-v5',
+      selection: 'operational-evidence-and-commercial-history-v6',
+      operations: [...latestOperational.values()].map((s) => ({
+        source: s.operationalKey,
+        status: s.operationalStatus,
+        checkedAt: s.date,
+      })),
       briefingNotes: {
         availableChunks: briefingNotes.length,
         selectedChunks: briefingNotes.filter((source) => seen.has(source.id)).length,
