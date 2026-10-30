@@ -12,6 +12,8 @@ SERP Monitor e Report Engine abrem áreas próprias dentro do CRM Intelligence, 
 - No Report Engine, geração/reprocessamento executável é **Brand Bidding**, com campanhas, termos e janela de 1–365 dias escolhidos. BBP e GD permanecem disponíveis para consulta. Reprocessar pode atualizar o link público; preserva revisão pendente e a versão anterior quando faltam evidências. Não envia mensagens nem altera o Pipedrive.
 - Terminar uma coleta não autoriza gerar relatório. Cada ação e cada chamado de helpdesk têm sua própria aprovação.
 
+O relatório propõe combinar as campanhas com captura concluída e cobertura comprovada nos últimos 30 dias. A pessoa pode selecionar as campanhas, os termos e o período manualmente. Termos precisam existir em ao menos uma das campanhas escolhidas; a origem valida cada vínculo. A aprovação congela a seleção exata. O Report Engine aplica `onlyIfBetter`: prioriza anunciantes distintos e desempata pelo volume de anúncios, mantendo seus gates de qualidade e as datas da versão preservada. Consultas SERP concluídas e anunciantes do relatório são métricas diferentes.
+
 ## Publicação e operação
 
 Aplicar `20261030150000_project_executions.sql` no banco CRM e a migração de recibos no Report Engine antes de publicar os três projetos existentes por Git. As tabelas são privadas, sem acesso direto do navegador.

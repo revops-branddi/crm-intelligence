@@ -220,3 +220,38 @@ test('scope, ceiling, ongoing capture, report terms and clock semantics are vali
   ops.serp.facts.read_at = 'later';
   assert.equal(executionProof(ops, scope, { org_id: 9 }, 'reports'), a);
 });
+test('report selection can combine campaign-specific keywords without admitting foreign terms', () => {
+  const ops = {
+    serp: {
+      status: 'read',
+      facts: {
+        state: 'complete',
+        campaigns: [
+          campaign,
+          {
+            ...campaign,
+            id: 'c2',
+            configuration: { ...campaign.configuration, keywords: ['marca promoção'] },
+          },
+        ],
+      },
+    },
+    reports: {
+      status: 'read',
+      facts: { products: [{ product: 'bb', state: 'not_found', reports: [] }] },
+    },
+  };
+  const p = {
+    system: 'reports',
+    brand: 'Marca',
+    domain: 'marca.test',
+    mode: 'generate',
+    slug: 'crm-17-bb',
+    campaignIds: ['c1', 'c2'],
+    keywords: ['marca', 'marca promoção'],
+  };
+  assert.doesNotThrow(() => validateParameters(p, scope, ops));
+  assert.throws(() => validateParameters({ ...p, keywords: ['outra marca'] }, scope, ops));
+  ops.serp.facts.campaigns[1].queued_tasks = 1;
+  assert.throws(() => validateParameters(p, scope, ops));
+});

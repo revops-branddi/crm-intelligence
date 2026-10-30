@@ -199,7 +199,8 @@ export async function readSavedOperations(
         age < (old.status === 'read' ? 120000 : 30000)
       )
         return null;
-      const readAt = new Date(now).toISOString();
+      // Forced reads in the same millisecond must replace the previous evidence.
+      const readAt = new Date(Math.max(now, (Date.parse(old?.readAt) || 0) + 1)).toISOString();
       let status = 'unavailable',
         facts = null;
       if (!matches) status = 'identity_changed';
