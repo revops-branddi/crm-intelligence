@@ -101,6 +101,14 @@ export function inspectMaterial(document, scope, now = new Date()) {
   else if (!mentions(text, scope.product))
     add('product', 'pending', `Produto “${scope.product}” não identificado no texto.`);
   else add('product', 'pass', `Produto identificado: ${scope.product}.`);
+  if (/^https:\/\/report\.branddi\.com\/[a-zA-Z0-9_.-]+\/gd\/?$/.test(document.url || '')) {
+    add(
+      'date',
+      'pending',
+      'GD é uma visão dinâmica. A data exibida na página é da consulta ao agregado; confirme o período das evidências.',
+    );
+    return checks;
+  }
   const dates = datedEvidence(text);
   const unique = [...new Set(dates.map((d) => d.value))];
   if (!dates.length)

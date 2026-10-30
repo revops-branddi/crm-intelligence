@@ -490,3 +490,19 @@ test('reader checks redirects, pins DNS, never forwards authorization and reject
     /restrito/,
   );
 });
+
+test('live GD rendering date cannot pass material evidence freshness validation', () => {
+  const checks = inspectMaterial(
+    {
+      url: 'https://report.branddi.com/lume/gd',
+      title: 'Lume Golpes Digitais',
+      text:
+        'Lume lume.com.br Golpes Digitais. Gerado em 29/10/2026. ' +
+        'Dados de domínios suspeitos preservados. '.repeat(5),
+    },
+    { ...scope, product: 'Golpes Digitais' },
+    new Date('2026-10-29T18:00:00Z'),
+  );
+  assert.equal(checks.find((c) => c.key === 'date').status, 'pending');
+  assert.match(checks.find((c) => c.key === 'date').message, /visão dinâmica/);
+});
