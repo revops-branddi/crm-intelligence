@@ -125,6 +125,20 @@
   background: #edf5f3;
   line-height: 1.5;
 }
+.project-campaigns {
+  border: 1px solid #ccdce0;
+  border-radius: 8px;
+  padding: 12px;
+}
+.project-campaigns p {
+  margin: 12px 0;
+  color: #526b76;
+  line-height: 1.5;
+}
+.project-campaigns .project-consent {
+  margin: 12px 0;
+  overflow-wrap: anywhere;
+}
 .project-recommendations h3 {
   font-weight: 600;
   margin-bottom: 10px;

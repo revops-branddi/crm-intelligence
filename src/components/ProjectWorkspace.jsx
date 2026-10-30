@@ -3,6 +3,7 @@ import { Radar, FileChartColumn, ArrowLeft, RefreshCw, CheckCircle2 } from 'luci
 import { apiRequest } from '../services/api';
 import { ScopeForm } from './PreparationWorkflow';
 import { DetailSheet } from './DetailSheet';
+import { reportCampaigns, reportKeywords } from '../services/report-evidence';
 import './project-workspace.css';
 const names = { serp: 'SERP Monitor', reports: 'Report Engine' };
 const labels = {
@@ -107,6 +108,9 @@ function Facts({ system, data }) {
                   Geração: {date(r.generated_at)} ·{' '}
                   {r.linked_in_crm ? 'Link no card' : 'Sem vínculo no card'}
                 </p>
+                {p.product === 'bb' && (
+                  <p>Anunciantes no relatório: {r.advertisers_count ?? 'Não informado'}</p>
+                )}
                 <a href={r.url} target="_blank" rel="noopener noreferrer">
                   Ver relatório
                 </a>
@@ -182,6 +186,13 @@ function ScopeSummary({ p }) {
             </dd>
           </div>
           <div>
+            <dt>Regra de atualização</dt>
+            <dd>
+              Prioriza mais anunciantes; em empate, mais anúncios. Preserva a versão anterior se o
+              novo resultado perder volume dentro da janela.
+            </dd>
+          </div>
+          <div>
             <dt>Publicação</dt>
             <dd>O link público pode ser atualizado. Sem envio ao lead ou alteração da etapa.</dd>
           </div>
@@ -197,17 +208,21 @@ function Proposal({ system, data, onPrepare, onConfirmScope, busy }) {
   const first = camps[0],
     report = reports.find((r) => r.linked_in_crm) || reports[0];
   const scope = data.scope || data.defaults || { brands: [], domains: [] };
+  const initialCampaigns = reportCampaigns(camps, 30);
   const [values, setForm] = useState({
     brand: scope?.brands?.[0] || '',
     domain: scope?.domains?.[0] || '',
-    keywords: first?.configuration.keywords?.join(', ') || '',
+    keywords:
+      system === 'reports'
+        ? reportKeywords(initialCampaigns).join(', ')
+        : first?.configuration.keywords?.join(', ') || '',
     cities: first?.configuration.cities?.slice(0, 3).join('\n') || 'São Paulo,Brazil',
     devices: 'both',
     rounds: 2,
     windowHours: 12,
     maxRequests: 100,
     allowStageException: false,
-    campaignId: first?.id || '',
+    campaignIds: initialCampaigns.map((c) => c.id),
     slug: report?.slug || '',
     lookbackDays: 30,
     assigneeId: data.defaultAssigneeId,
@@ -245,7 +260,7 @@ function Proposal({ system, data, onPrepare, onConfirmScope, busy }) {
             slug: form.slug || `crm-${data.dealId}-bb`,
             mode: reports.length ? 'regenerate' : 'generate',
             lookbackDays: Number(form.lookbackDays),
-            campaignIds: [form.campaignId],
+            campaignIds: form.campaignIds,
           };
     try {
       await onPrepare(params, form.assigneeId, form.reason);
@@ -285,27 +300,58 @@ function Proposal({ system, data, onPrepare, onConfirmScope, busy }) {
         </label>
         {system === 'reports' && (
           <>
-            <label>
-              Campanha de origem
-              <select
-                value={form.campaignId}
-                onChange={(e) => {
-                  const c = camps.find((c) => c.id === e.target.value);
+            <details className="project-campaigns full">
+              <summary>Campanhas de origem · {form.campaignIds.length} selecionada(s)</summary>
+              <p>
+                Combine coletas do período para ampliar as evidências. O relatório conta anunciantes
+                distintos, sem somar duplicatas entre campanhas.
+              </p>
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => {
+                  const selected = reportCampaigns(camps, form.lookbackDays);
                   setForm((f) => ({
                     ...f,
-                    campaignId: c.id,
-                    keywords: c.configuration.keywords?.join(', ') || '',
+                    campaignIds: selected.map((c) => c.id),
+                    keywords: reportKeywords(selected).join(', '),
                   }));
                 }}
               >
-                {camps.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.id}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
+                Selecionar coletas concluídas do período
+              </button>
+              {camps.map((c) => (
+                <label className="project-consent" key={c.id}>
+                  <input
+                    type="checkbox"
+                    checked={form.campaignIds.includes(c.id)}
+                    disabled={
+                      c.queued_tasks !== 0 ||
+                      c.executions.some((e) => ['pending', 'running'].includes(e.status))
+                    }
+                    onChange={(e) =>
+                      setForm((f) => {
+                        const ids = e.target.checked
+                          ? [...f.campaignIds, c.id]
+                          : f.campaignIds.filter((id) => id !== c.id);
+                        return {
+                          ...f,
+                          campaignIds: ids,
+                          keywords: reportKeywords(
+                            camps.filter((camp) => ids.includes(camp.id)),
+                          ).join(', '),
+                        };
+                      })
+                    }
+                  />
+                  <span>
+                    {c.id} · {date(c.executions[0]?.finished_at)}
+                    {c.queued_tasks > 0 ? ' · Coleta pendente' : ''}
+                  </span>
+                </label>
+              ))}
+            </details>
+            <label className="full">
               Relatório
               {reports.length ? (
                 <select value={form.slug} onChange={(e) => change('slug', e.target.value)}>
@@ -435,16 +481,21 @@ function Proposal({ system, data, onPrepare, onConfirmScope, busy }) {
       <div className="project-plan-summary" role="status">
         {system === 'serp'
           ? `${split(form.keywords).length} termos × ${form.cities.split('\n').filter((c) => c.trim()).length} cidades × ${form.devices === 'both' ? 2 : 1} dispositivos × ${form.rounds} rodadas = ${split(form.keywords).length * form.cities.split('\n').filter((c) => c.trim()).length * (form.devices === 'both' ? 2 : 1) * Number(form.rounds)} buscas planejadas. Teto: ${form.maxRequests} consultas, incluindo tentativas.`
-          : `Brand Bidding · últimos ${form.lookbackDays} dias · ${split(form.keywords).length} termos · 1 campanha selecionada.`}
+          : `Brand Bidding · últimos ${form.lookbackDays} dias · ${split(form.keywords).length} termos · ${form.campaignIds.length} campanha(s) selecionada(s).`}
       </div>
       <p className="briefing-muted">
         {system === 'serp'
           ? 'A coleta usa uma campanha própria, com limite e prazo. Não dispara relatório, mensagem ou mudança de etapa.'
-          : 'Reprocessamento Brand Bidding com as evidências selecionadas. Mantém as regras de revisão e preservação do relatório.'}
+          : 'A atualização prioriza o número de anunciantes e usa o volume de anúncios como desempate. Um resultado menor preserva a versão anterior válida. Você pode ajustar campanhas, termos e período antes de cada aprovação.'}
       </p>
       <button
         className="primary"
-        disabled={busy || !data.enabled[system] || !data.scope?.confirmedAt}
+        disabled={
+          busy ||
+          !data.enabled[system] ||
+          !data.scope?.confirmedAt ||
+          (system === 'reports' && !form.campaignIds.length)
+        }
       >
         {busy ? 'Conferindo dados…' : 'Revisar aprovação individual'}
       </button>

@@ -1,4 +1,4 @@
-export function projectFixture({ scopeConfirmed = true } = {}) {
+export function projectFixture({ scopeConfirmed = true, multipleCampaigns = false } = {}) {
   const jobs = [];
   const campaign = {
     id: 'synthetic-c1',
@@ -9,7 +9,14 @@ export function projectFixture({ scopeConfirmed = true } = {}) {
       devices: ['desktop'],
     },
     executions: [
-      { status: 'completed', planned_tasks: 12, queue_completed_tasks: 12, tasks_with_ads: 1 },
+      {
+        status: 'completed',
+        finished_at: new Date().toISOString(),
+        planned_tasks: 12,
+        queue_completed_tasks: 12,
+        terminal_queue_failures: 0,
+        tasks_with_ads: 1,
+      },
     ],
   };
   const context = {
@@ -50,6 +57,12 @@ export function projectFixture({ scopeConfirmed = true } = {}) {
     },
   };
   context.defaults = { brands: ['Lume'], domains: ['lume.example.test'] };
+  if (multipleCampaigns)
+    context.operations.serp.facts.campaigns.push({
+      ...campaign,
+      id: 'synthetic-c2',
+      configuration: { ...campaign.configuration, keywords: ['lume promoção'] },
+    });
   if (!scopeConfirmed) context.scope = null;
   return function (request) {
     if (request.action === 'projectContext') return { ...context, executions: [...jobs] };

@@ -108,10 +108,11 @@ async function fixture(
     spreadsheetBatches = 0,
     operational = false,
     projectScopeConfirmed = true,
+    multipleCampaigns = false,
   } = {},
 ) {
   const calls = [];
-  const project = projectFixture({ scopeConfirmed: projectScopeConfirmed });
+  const project = projectFixture({ scopeConfirmed: projectScopeConfirmed, multipleCampaigns });
   const cachedAnswer = answer('overview');
   if (rich) cachedAnswer.answer.sections = richSections();
   const workflowUser = { id: '11111111-1111-4111-8111-111111111111', email: 'tester@branddi.test' };
@@ -931,4 +932,31 @@ test('monitoring can be customized before scope confirmation and saved as an una
   expect(calls.filter((c) => c.action === 'approveProjectAction')).toHaveLength(0);
   await page.getByText('Propostas salvas e histórico', { exact: true }).click();
   await expect(page.getByRole('button', { name: /Aguardando aprovação/ })).toBeVisible();
+});
+
+test('report starts with combined evidence, permits manual selection and keeps approval separate', async ({
+  page,
+}) => {
+  const calls = await fixture(page, { cached: true, company: true, multipleCampaigns: true });
+  await page.getByLabel('ID do negócio').fill('7');
+  await page.getByRole('button', { name: 'Analisar negócio', exact: true }).click();
+  await page.getByRole('button', { name: /Report Engine Evidências/ }).click();
+  await page.getByRole('button', { name: 'Personalizar reprocessamento' }).click();
+  await expect(page.getByLabel('Palavras-chave exatas')).toHaveValue('lume, lume promoção');
+  await page.getByText('Campanhas de origem · 2 selecionada(s)').click();
+  await page.getByRole('checkbox', { name: /synthetic-c2/ }).uncheck();
+  await expect(page.getByLabel('Palavras-chave exatas')).toHaveValue('lume');
+  await page.getByLabel('Janela das evidências (dias)').fill('7');
+  await page
+    .getByLabel('Objetivo deste reprocessamento')
+    .fill('Reprocessar a campanha selecionada na janela personalizada.');
+  await page.getByRole('button', { name: 'Revisar aprovação individual' }).click();
+  const prepared = calls.filter((c) => c.action === 'prepareProjectAction').at(-1);
+  expect(prepared.parameters.campaignIds).toEqual(['synthetic-c1']);
+  expect(prepared.parameters.lookbackDays).toBe(7);
+  expect(calls.filter((c) => c.action === 'approveProjectAction')).toHaveLength(0);
+  await expect(
+    page.getByRole('button', { name: 'Aprovar e executar no Report Engine' }),
+  ).toBeDisabled();
+  await expect(page.getByText(/Prioriza mais anunciantes/)).toBeVisible();
 });

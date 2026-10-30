@@ -128,12 +128,14 @@ export function validateParameters(params, scope, ops) {
       fail('Já existe relatório; selecione o reprocessamento.');
     if (params.mode === 'generate' && !params.slug.startsWith('crm-'))
       fail('Use o identificador proposto para a nova geração.');
+    const availableKeywords = new Set();
     for (const id of params.campaignIds) {
       const c = camps.find((c) => c.id === id);
       if (!c || c.queued_tasks > 0) fail('Selecione uma campanha deste deal sem coleta pendente.');
-      if (params.keywords.some((k) => !c.configuration.keywords?.includes(k)))
-        fail('Selecione termos exatos presentes na campanha escolhida.');
+      for (const keyword of c.configuration.keywords || []) availableKeywords.add(keyword);
     }
+    if (params.keywords.some((k) => !availableKeywords.has(k)))
+      fail('Selecione termos exatos presentes nas campanhas escolhidas.');
   }
 }
 export async function projectAction(input, ctx) {

@@ -109,6 +109,15 @@ function setup() {
   };
   return { f, db, pages, calls, options };
 }
+test('a forced read in the same millisecond supersedes the previous evidence even after storage ordering', async () => {
+  const c = setup();
+  await readSavedOperations(c.db, snapshot, c.pages, c.options);
+  c.f.monitoring.campaigns[0].queued_tasks = 1;
+  await readSavedOperations(c.db, snapshot, c.pages, { ...c.options, force: true });
+  const latest = latestOperations([...c.pages].reverse()).find((p) => p.payload.data.id === 'serp');
+  assert.equal(latest.payload.data.facts.campaigns[0].queued_tasks, 1);
+  assert.equal(Date.parse(latest.payload.data.readAt), now + 1);
+});
 test('all deals use exact identity GETs, dedicated headers, bounded timeout and persisted secret-free evidence', async () => {
   for (const dealId of [17, 804, 99031]) {
     const c = setup();
