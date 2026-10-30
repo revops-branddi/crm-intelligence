@@ -230,6 +230,13 @@ test('low yield, failures, waiting and unknown coverage lead to distinct recomme
   for (const [change, id, kind] of [
     [() => {}, 'scope', 'recommendation'],
     [
+      (c) => {
+        c.monitoring.campaigns[0].executions[0].possible_soft_block = true;
+      },
+      'capture-quality',
+      'recommendation',
+    ],
+    [
       (f) => {
         f.monitoring.campaigns[0].queued_tasks = 4;
       },

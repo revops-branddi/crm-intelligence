@@ -59,6 +59,7 @@ const monitoringSchema = z.object({
               terminal_queue_failures: count,
               tasks_with_ads: count,
               num_competitors: count,
+              possible_soft_block: z.boolean().nullable().optional(),
             }),
           )
           .max(400),

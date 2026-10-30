@@ -47,7 +47,7 @@ export function operationalText(record) {
       );
       for (const e of c.executions.slice(0, 3))
         lines.push(
-          `Execução ${e.id}: status=${value(e.status)}; início=${value(e.started_at)}; fim=${value(e.finished_at)}; tarefas=${value(e.total_tasks)}; concluídas=${value(e.completed_tasks)}; tentativas com erro=${value(e.error_tasks)}; tarefas planejadas=${value(e.planned_tasks)}; tarefas únicas concluídas=${value(e.queue_completed_tasks)}; falhas definitivas=${value(e.terminal_queue_failures)}; buscas com anúncios=${value(e.tasks_with_ads)}.`,
+          `Execução ${e.id}: status=${value(e.status)}; início=${value(e.started_at)}; fim=${value(e.finished_at)}; tarefas=${value(e.total_tasks)}; concluídas=${value(e.completed_tasks)}; tentativas com erro=${value(e.error_tasks)}; tarefas planejadas=${value(e.planned_tasks)}; tarefas únicas concluídas=${value(e.queue_completed_tasks)}; falhas definitivas=${value(e.terminal_queue_failures)}; buscas com anúncios=${value(e.tasks_with_ads)}; sinal de possível bloqueio=${value(e.possible_soft_block)}.`,
         );
       if (c.executions.length > 3)
         lines.push(
@@ -177,6 +177,8 @@ export function operationalPreparation(pages, sources, snapshot, scope, now = Da
         e?.terminal_queue_failures,
         e?.planned_tasks,
         e?.queue_completed_tasks,
+        e?.tasks_with_ads,
+        e?.possible_soft_block,
         record.facts.coverage,
       ];
       if (c.queued_tasks > 0 || ['pending', 'running'].includes(e?.status)) {
@@ -214,6 +216,14 @@ export function operationalPreparation(pages, sources, snapshot, scope, now = Da
           'Os dados disponíveis não comprovam a conclusão de toda a coleta. Verifique as lacunas antes de interpretar poucos achados.',
           basis,
           'task',
+        );
+      } else if (e.possible_soft_block === true) {
+        add(
+          record,
+          'capture-quality',
+          'Conferir qualidade da captura',
+          'O SERP sinalizou possível bloqueio na captura. Isso não confirma uma falha: revise amostras e cobertura antes de interpretar poucos resultados ou aprovar mais termos, cidades ou tempo de coleta.',
+          basis,
         );
       } else if (e.status === 'low_volume' || e.tasks_with_ads === 0) {
         add(
