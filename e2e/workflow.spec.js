@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import { preparationAction } from '../server/preparation.js';
 import { memoryDb } from '../tests/memory-db.js';
 import { validateMaterial } from '../server/material-validation.js';
+import { buildSources } from '../server/sources.js';
 const id = '22222222-2222-4222-8222-222222222222';
 const source = {
   id: 'notes:aaaaaaaaaaaa:1:0',
@@ -104,6 +105,7 @@ async function fixture(
     company = false,
     savedAnswers,
     spreadsheetBatches = 0,
+    operational = false,
   } = {},
 ) {
   const calls = [];
@@ -146,6 +148,62 @@ async function fixture(
         }),
       }),
   };
+  if (operational) {
+    const readAt = new Date().toISOString();
+    workflowContext.snapshot.title = 'Lume | Brand Bidding';
+    workflowContext.pages = [
+      {
+        kind: 'operational',
+        task_key: 'f'.repeat(64),
+        payload: {
+          data: {
+            id: 'serp',
+            name: 'SERP Monitor',
+            readerVersion: 'crm-operational-v1',
+            readAt,
+            status: 'read',
+            facts: {
+              state: 'complete',
+              coverage: {
+                campaigns_complete: true,
+                executions_complete: true,
+                queue_complete: true,
+              },
+              field_issues: [],
+              campaigns: [
+                {
+                  id: 'synthetic-c1',
+                  created_at: readAt,
+                  expires_at: readAt,
+                  status: 'completed',
+                  queued_tasks: 0,
+                  configuration: {
+                    keywords: ['lume'],
+                    cities: ['São Paulo'],
+                    devices: ['desktop'],
+                    search_engines: ['google'],
+                  },
+                  executions: [
+                    {
+                      id: 'synthetic-e1',
+                      status: 'low_volume',
+                      finished_at: readAt,
+                      error_tasks: 2,
+                      planned_tasks: 10,
+                      queue_completed_tasks: 10,
+                      terminal_queue_failures: 0,
+                      tasks_with_ads: 0,
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        },
+      },
+    ];
+    workflowContext.sources.push(...buildSources(workflowContext.pages));
+  }
   let isConnected = connected,
     steps = 0;
   await page.addInitScript(() => {
@@ -599,6 +657,36 @@ test('persists an individually approved helpdesk draft and never approves the ot
   expect(
     calls.filter((call) => call.action === 'savePreparationTask' && call.approveHelpdesk),
   ).toHaveLength(1);
+});
+
+test('operational recommendation approval persists individually and never sends an external action', async ({
+  page,
+}) => {
+  const calls = await fixture(page, { cached: true, rich: true, operational: true });
+  await page.getByLabel('ID do negócio').fill('7');
+  await page.getByRole('button', { name: 'Analisar negócio', exact: true }).click();
+  await expect(page.getByLabel('Consultas operacionais')).toContainText('SERP Monitor: Consultado');
+  await page.getByRole('button', { name: 'Pendências e erros' }).click();
+  const row = page
+    .locator('.workflow-task-list article')
+    .filter({
+      has: page.getByRole('heading', { name: 'Revisar alcance da monitoria', exact: true }),
+    });
+  await row.getByRole('button', { name: 'Revisar pendência' }).click();
+  await page
+    .getByLabel('Observação da revisão')
+    .fill('Conferi a cobertura e proponho revisar apenas termos de marca.');
+  await page.getByLabel('Revisei e aprovo somente esta recomendação.').check();
+  await page.getByRole('button', { name: 'Salvar e aprovar recomendação' }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await row.getByRole('button', { name: 'Revisar pendência' }).click();
+  await expect(page.getByRole('dialog')).toContainText('Aprovada em');
+  await expect(page.getByRole('dialog')).toContainText(
+    'nenhuma monitoria, relatório ou alteração no CRM é disparada aqui',
+  );
+  expect(calls.filter((c) => c.approveRecommendation)).toHaveLength(1);
+  expect(calls.some((c) => c.approveHelpdesk)).toBe(false);
+  expect(calls.some((c) => /generate|monitoria|execute/.test(c.action))).toBe(false);
 });
 
 test('group notice saves explicit scope; material reading, assignment and completion survive reload', async ({
