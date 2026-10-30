@@ -38,6 +38,8 @@ const monitoringSchema = z.object({
         queue_detail: z
           .object({
             observed_at: z.string().datetime({ offset: true }),
+            eligible_ready_tasks: z.number().int().nonnegative().nullable().optional(),
+            tasks_ahead: z.number().int().nonnegative().nullable().optional(),
             ready_tasks: count,
             scheduled_tasks: count,
             processing_tasks: count,

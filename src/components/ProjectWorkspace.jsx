@@ -37,7 +37,7 @@ const sourceStatus = (s) =>
   })[s] ||
   s ||
   'Não informado';
-function Facts({ system, data }) {
+function Facts({ system, data, onPrioritize, busy }) {
   const op = data.operations[system];
   if (op?.status !== 'read')
     return (
@@ -103,6 +103,10 @@ function Facts({ system, data }) {
                         o processador.
                       </p>
                     )}
+                    {Number.isInteger(c.queue_detail.tasks_ahead) &&
+                      c.queue_detail.ready_tasks > 0 && (
+                        <p>{c.queue_detail.tasks_ahead} tarefas elegíveis à frente desta coleta.</p>
+                      )}
                     {c.queue_detail.stale_processing_tasks > 0 && (
                       <p>
                         {c.queue_detail.stale_processing_tasks} tarefas com reserva vencida;
@@ -118,6 +122,16 @@ function Facts({ system, data }) {
                       Consulta: {date(c.queue_detail.observed_at)}. Nova coleta liberada quando a
                       fila zerar.
                     </p>
+                    {c.queue_detail.eligible_ready_tasks > 0 &&
+                      c.queue_detail.eligible_ready_tasks <= 1000 && (
+                        <button
+                          className="secondary"
+                          disabled={busy || !data.enabled.serp || !data.scope?.confirmedAt}
+                          onClick={() => onPrioritize(c)}
+                        >
+                          Priorizar coleta existente
+                        </button>
+                      )}
                   </div>
                 ) : (
                   <p className="briefing-note">
@@ -170,6 +184,32 @@ function Facts({ system, data }) {
   );
 }
 function ScopeSummary({ p }) {
+  if (p.action === 'prioritize')
+    return (
+      <dl className="project-scope">
+        <div>
+          <dt>Coleta existente</dt>
+          <dd>{p.campaignId}</dd>
+        </div>
+        <div>
+          <dt>Marca</dt>
+          <dd>
+            {p.brand} · {p.domains.join(', ')}
+          </dd>
+        </div>
+        <div>
+          <dt>Ação</dt>
+          <dd>Priorizar até {p.expectedReadyTasks} tarefas já liberadas.</dd>
+        </div>
+        <div>
+          <dt>Efeito</dt>
+          <dd>
+            Mantém horários, tentativas e limites. Não cria buscas, não cancela a coleta e não
+            altera tarefas em execução.
+          </dd>
+        </div>
+      </dl>
+    );
   return (
     <dl className="project-scope">
       <div>
@@ -240,6 +280,63 @@ function ScopeSummary({ p }) {
         </>
       )}
     </dl>
+  );
+}
+function PriorityProposal({ campaign, data, busy, onPrepare }) {
+  const [assigneeId, setAssigneeId] = useState(data.defaultAssigneeId);
+  const [reason, setReason] = useState(
+    'Concluir a coleta existente para liberar a análise solicitada.',
+  );
+  const [error, setError] = useState('');
+  const parameters = {
+    system: 'serp',
+    action: 'prioritize',
+    campaignId: campaign.id,
+    brand: data.scope.brands[0],
+    domains: data.scope.domains,
+    expectedReadyTasks: campaign.queue_detail.eligible_ready_tasks,
+  };
+  return (
+    <form
+      onSubmit={async (e) => {
+        e.preventDefault();
+        setError('');
+        try {
+          await onPrepare(parameters, assigneeId, reason);
+        } catch (e) {
+          setError(e.message);
+        }
+      }}
+    >
+      <ScopeSummary p={parameters} />
+      <div className="project-form-grid">
+        <label>
+          Responsável
+          <select required value={assigneeId} onChange={(e) => setAssigneeId(e.target.value)}>
+            <option value="">Selecione</option>
+            {data.assignees.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="full">
+          Motivo
+          <textarea
+            required
+            minLength={10}
+            maxLength={500}
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+          />
+        </label>
+      </div>
+      {error && <p role="alert">{error}</p>}
+      <button className="primary" disabled={busy}>
+        Revisar aprovação individual
+      </button>
+    </form>
   );
 }
 function Proposal({ system, data, onPrepare, onConfirmScope, busy }) {
@@ -552,7 +649,8 @@ export function ProjectWorkspace({ snapshot, system, onOpen, onBack, onComplete 
     [consent, setConsent] = useState(false),
     [tab, setTab] = useState('analysis'),
     [scopeData, setScopeData] = useState(null),
-    [scopeError, setScopeError] = useState('');
+    [scopeError, setScopeError] = useState(''),
+    [priorityCampaign, setPriorityCampaign] = useState(null);
   const openScope = async () => {
     setBusy(true);
     setScopeError('');
@@ -757,7 +855,7 @@ export function ProjectWorkspace({ snapshot, system, onOpen, onBack, onComplete 
                   </p>
                 )}
               </div>
-              <Facts system={system} data={data} />
+              <Facts system={system} data={data} busy={busy} onPrioritize={setPriorityCampaign} />
               <button
                 className="primary"
                 onClick={() => {
@@ -865,6 +963,25 @@ export function ProjectWorkspace({ snapshot, system, onOpen, onBack, onComplete 
             ) : (
               <p>Escolha uma ação salva ou personalize um reprocessamento.</p>
             ))}
+          {priorityCampaign && (
+            <DetailSheet
+              title="Priorizar coleta existente"
+              subtitle="Uma aprovação para esta coleta"
+              onClose={() => {
+                if (!busy) setPriorityCampaign(null);
+              }}
+            >
+              <PriorityProposal
+                campaign={priorityCampaign}
+                data={data}
+                busy={busy}
+                onPrepare={async (...args) => {
+                  await prepare(...args);
+                  setPriorityCampaign(null);
+                }}
+              />
+            </DetailSheet>
+          )}
           {scopeData && (
             <DetailSheet
               title="Escopo da negociação"

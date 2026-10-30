@@ -255,3 +255,87 @@ test('report selection can combine campaign-specific keywords without admitting 
   ops.serp.facts.campaigns[1].queued_tasks = 1;
   assert.throws(() => validateParameters(p, scope, ops));
 });
+
+test('refreshed queue observation clock never invalidates approval; material queue changes still do', () => {
+  const ops = {
+    serp: {
+      facts: {
+        state: 'complete',
+        coverage: { queue_complete: true },
+        campaigns: [
+          {
+            ...campaign,
+            queue_detail: {
+              observed_at: '2026-10-30T12:00:00Z',
+              ready_tasks: 0,
+              processing_tasks: 0,
+              tasks_ahead: 10,
+            },
+          },
+        ],
+      },
+    },
+  };
+  const current = { org_id: 9, stage_id: 403, pipeline_id: 29 };
+  const proof = executionProof(ops, scope, current, 'serp');
+  ops.serp.facts.campaigns[0].queue_detail.observed_at = '2026-10-30T12:01:00Z';
+  ops.serp.facts.campaigns[0].queue_detail.tasks_ahead = 5;
+  assert.equal(executionProof(ops, scope, current, 'serp'), proof);
+  ops.serp.facts.campaigns[0].queue_detail.ready_tasks = 1;
+  assert.notEqual(executionProof(ops, scope, current, 'serp'), proof);
+});
+test('existing queue priority requires individual approval and uses its own endpoint exactly once', async () => {
+  const c = setup();
+  c.data.monitoring.campaigns[0].queued_tasks = 162;
+  c.data.monitoring.campaigns[0].queue_detail = {
+    observed_at: new Date().toISOString(),
+    ready_tasks: 162,
+    eligible_ready_tasks: 162,
+    tasks_ahead: 80,
+    scheduled_tasks: 0,
+    processing_tasks: 0,
+    stale_processing_tasks: 0,
+    unknown_schedule_tasks: 0,
+    next_scheduled_at: null,
+    oldest_ready_at: '2026-10-30T10:00:00Z',
+    last_updated_at: null,
+  };
+  const params = {
+    system: 'serp',
+    action: 'prioritize',
+    campaignId: 'c1',
+    brand: 'Marca',
+    domains: ['marca.test'],
+    expectedReadyTasks: 162,
+  };
+  const p = await projectAction(
+    {
+      action: 'prepareProjectAction',
+      parameters: params,
+      assigneeId: '4',
+      reason: 'Concluir coleta existente',
+    },
+    c.ctx,
+  );
+  assert.equal(c.calls.filter((c) => c.init?.method === 'POST').length, 0);
+  c.data.monitoring.campaigns[0].queue_detail.observed_at = new Date(
+    Date.now() + 1000,
+  ).toISOString();
+  await projectAction({ action: 'approveProjectAction', executionId: p.execution.id }, c.ctx);
+  await projectAction({ action: 'approveProjectAction', executionId: p.execution.id }, c.ctx);
+  const posts = c.calls.filter((c) => c.init?.method === 'POST');
+  assert.equal(posts.length, 1);
+  assert.match(posts[0].url, /\/queue-priority$/);
+  assert.equal(JSON.parse(posts[0].init.body).expectedReadyTasks, 162);
+  assert.equal(JSON.parse(posts[0].init.body).actor, c.ctx.user.email);
+  const ops = { serp: { status: 'read', facts: c.data.monitoring } };
+  assert.throws(() => validateParameters(parameters, scope, ops), /Aguarde/);
+  assert.throws(
+    () => validateParameters({ ...params, campaignId: 'foreign' }, scope, ops),
+    /Atualize/,
+  );
+  assert.throws(
+    () => validateParameters({ ...params, expectedReadyTasks: 163 }, scope, ops),
+    /Atualize/,
+  );
+});

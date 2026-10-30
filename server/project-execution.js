@@ -8,7 +8,17 @@ import { companyContext } from './company-context.js';
 import { scopeDefaults } from './preparation.js';
 import { operationalPreparation } from './operational-advice.js';
 const text = z.string().trim().min(1).max(150);
-export const projectParameters = z.discriminatedUnion('system', [
+export const projectParameters = z.union([
+  z
+    .object({
+      system: z.literal('serp'),
+      action: z.literal('prioritize'),
+      campaignId: text,
+      brand: text,
+      domains: z.array(text).min(1).max(10),
+      expectedReadyTasks: z.number().int().min(1).max(1000),
+    })
+    .strict(),
   z
     .object({
       system: z.literal('serp'),
@@ -49,6 +59,10 @@ const configs = {
     url: 'https://report.branddi.com/api/internal/crm-intelligence/executions',
   },
 };
+const executionUrl = (row) =>
+  row.parameters?.action === 'prioritize'
+    ? configs.serp.url.replace('/executions', '/queue-priority')
+    : configs[row.system].url;
 const fail = (message, code = 'invalid_execution', status = 409) => {
   throw new HttpError(status, message, code);
 };
@@ -76,7 +90,20 @@ export function executionProof(ops, scope, current, system) {
     org: idOf(current.org_id),
     stage: current.stage_id,
     pipeline: current.pipeline_id,
-    serp: serp && { state: serp.state, coverage: serp.coverage, campaigns: serp.campaigns },
+    serp: serp && {
+      state: serp.state,
+      coverage: serp.coverage,
+      campaigns: serp.campaigns.map(({ queue_detail, ...c }) => ({
+        ...c,
+        queue_detail:
+          queue_detail &&
+          Object.fromEntries(
+            Object.entries(queue_detail).filter(
+              ([k]) => !['observed_at', 'tasks_ahead'].includes(k),
+            ),
+          ),
+      })),
+    },
     reports: system === 'reports' ? reports : undefined,
   });
 }
@@ -98,7 +125,17 @@ export function validateParameters(params, scope, ops) {
   ].filter(Boolean))
     if (new Set(list).size !== list.length) fail('Remova valores duplicados do escopo.');
   const camps = ops.serp.facts.campaigns;
-  if (params.system === 'serp') {
+  if (params.action === 'prioritize') {
+    const c = camps.find((c) => c.id === params.campaignId);
+    if (
+      !c ||
+      !c.queue_detail ||
+      c.queue_detail.eligible_ready_tasks !== params.expectedReadyTasks ||
+      c.queue_detail.unknown_schedule_tasks > 0 ||
+      (c.expires_at && Date.parse(c.expires_at) <= Date.now())
+    )
+      fail('Atualize a fila e selecione apenas tarefas liberadas de uma coleta vigente.');
+  } else if (params.system === 'serp') {
     const n = params.keywords.length * params.cities.length * params.devices.length * params.rounds;
     if (params.maxRequests < n) fail(`O limite deve cobrir as ${n} consultas planejadas.`);
     if (
@@ -325,7 +362,7 @@ export async function projectAction(input, ctx) {
     let status = 'uncertain',
       result = { message: 'Confirmando o pedido no sistema. Não reenvie a ação.' };
     try {
-      const response = await fetcher(config.url, {
+      const response = await fetcher(executionUrl(row), {
         method: 'POST',
         headers: { Authorization: `Bearer ${env[config.key]}`, 'Content-Type': 'application/json' },
         body: JSON.stringify(command),
@@ -367,7 +404,7 @@ export async function projectAction(input, ctx) {
     );
   } else if (input.action === 'projectExecution' && active.includes(row.status)) {
     try {
-      const url = new URL(config.url);
+      const url = new URL(executionUrl(row));
       url.search = new URLSearchParams({ ...identity, id: row.id });
       const response = await fetcher(url, {
         headers: { Authorization: `Bearer ${env[config.key]}` },
