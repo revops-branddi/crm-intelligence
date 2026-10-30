@@ -173,7 +173,7 @@ export async function readSavedOperations(
   db,
   snapshot,
   pages,
-  { currentDeal, env = process.env, fetcher = fetch, now = Date.now() },
+  { currentDeal, env = process.env, fetcher = fetch, now = Date.now(), force = false },
 ) {
   const savedDeal = pages.find((p) => p.kind === 'deal')?.payload?.data;
   const identity = {
@@ -191,6 +191,7 @@ export async function readSavedOperations(
       const old = latest.find((p) => p.payload.data.id === provider.id)?.payload.data;
       const age = now - Date.parse(old?.readAt);
       if (
+        !force &&
         matches &&
         old &&
         Object.entries(identity).every(([key, value]) => old.identity?.[key] === value) &&

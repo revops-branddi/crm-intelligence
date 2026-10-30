@@ -1,3 +1,4 @@
+import { projectAction, projectParameters } from './project-execution.js';
 import { readSavedMaterials } from './material-reading.js';
 import { z } from 'zod';
 import { database, authenticate, encryptToken, decryptToken, limit } from './security.js';
@@ -19,6 +20,25 @@ const uuid = z.string().uuid();
 const assigneeId = z.string().regex(/^[1-9]\d{0,14}$/);
 const preparationRevision = z.number().int().min(0);
 const inputSchema = z.discriminatedUnion('action', [
+  z.object({
+    action: z.literal('projectContext'),
+    snapshotId: uuid,
+    refresh: z.boolean().default(false),
+  }),
+  z.object({
+    action: z.literal('prepareProjectAction'),
+    snapshotId: uuid,
+    parameters: projectParameters,
+    assigneeId,
+    reason: z.string().trim().min(10).max(500),
+  }),
+  z.object({
+    action: z.literal('approveProjectAction'),
+    snapshotId: uuid,
+    executionId: uuid,
+    approve: z.literal(true),
+  }),
+  z.object({ action: z.literal('projectExecution'), snapshotId: uuid, executionId: uuid }),
   z.object({ action: z.literal('status') }),
   z.object({ action: z.literal('disconnect') }),
   z.object({ action: z.literal('connect'), token: z.string().trim().min(20).max(512) }),
@@ -293,6 +313,24 @@ export async function handleAction(
   if (input.action === 'readSpreadsheets') {
     await limit(db, user.id, 'spreadsheet-reading', 20, 3600);
     return readSavedSpreadsheets(db, snapshot, pages);
+  }
+  if (
+    ['projectContext', 'prepareProjectAction', 'approveProjectAction', 'projectExecution'].includes(
+      input.action,
+    )
+  ) {
+    if (input.action !== 'projectContext' && input.action !== 'projectExecution')
+      await limit(db, user.id, 'project-execution', 30, 3600);
+    return projectAction(input, {
+      db,
+      user,
+      snapshot,
+      pages,
+      currentDeal: current.data,
+      client,
+      env,
+      fetcher: operationalFetcher,
+    });
   }
   let sources = buildSources(pages);
   if (
