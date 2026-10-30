@@ -289,22 +289,9 @@ function TaskForm({ task, data, snapshot, busy, onSave, onSource }) {
       )}
       {task.kind === 'recommendation' && (
         <div className="briefing-note">
-          {!['resolved', 'dismissed'].includes(status) && (
-            <label className="preparation-check">
-              <input
-                type="checkbox"
-                checked={approve}
-                onChange={(e) => setApprove(e.target.checked)}
-              />
-              <span>Revisei e aprovo somente esta recomendação.</span>
-            </label>
-          )}
           <p>
-            {task.recommendationApproval
-              ? `Aprovada em ${date(task.recommendationApproval.at)}. `
-              : ''}
-            A aprovação registra a decisão. A execução deve ser solicitada no Hub; nenhuma
-            monitoria, relatório ou alteração no CRM é disparada aqui.
+            Abra as ferramentas do SERP Monitor ou Report Engine no briefing para personalizar e
+            aprovar a execução. Salvar esta pendência não inicia uma operação.
           </p>
         </div>
       )}

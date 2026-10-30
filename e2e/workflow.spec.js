@@ -1,3 +1,4 @@
+import { projectFixture } from './project-fixture.js';
 import { test, expect } from '@playwright/test';
 import { preparationAction } from '../server/preparation.js';
 import { memoryDb } from '../tests/memory-db.js';
@@ -109,6 +110,7 @@ async function fixture(
   } = {},
 ) {
   const calls = [];
+  const project = projectFixture();
   const cachedAnswer = answer('overview');
   if (rich) cachedAnswer.answer.sections = richSections();
   const workflowUser = { id: '11111111-1111-4111-8111-111111111111', email: 'tester@branddi.test' };
@@ -233,6 +235,12 @@ async function fixture(
     expect(route.request().headers().authorization).toBe('Bearer synthetic-access-token');
     let body;
     switch (request.action) {
+      case 'projectContext':
+      case 'prepareProjectAction':
+      case 'approveProjectAction':
+      case 'projectExecution':
+        body = project(request);
+        break;
       case 'preparation':
       case 'saveScope':
       case 'savePreparationTask':
@@ -659,7 +667,7 @@ test('persists an individually approved helpdesk draft and never approves the ot
   ).toHaveLength(1);
 });
 
-test('operational recommendation approval persists individually and never sends an external action', async ({
+test('saving a recommendation keeps execution behind the project approval flow', async ({
   page,
 }) => {
   const calls = await fixture(page, { cached: true, rich: true, operational: true });
@@ -667,24 +675,21 @@ test('operational recommendation approval persists individually and never sends 
   await page.getByRole('button', { name: 'Analisar negócio', exact: true }).click();
   await expect(page.getByLabel('Consultas operacionais')).toContainText('SERP Monitor: Consultado');
   await page.getByRole('button', { name: 'Pendências e erros' }).click();
-  const row = page
-    .locator('.workflow-task-list article')
-    .filter({
-      has: page.getByRole('heading', { name: 'Revisar alcance da monitoria', exact: true }),
-    });
+  const row = page.locator('.workflow-task-list article').filter({
+    has: page.getByRole('heading', { name: 'Revisar alcance da monitoria', exact: true }),
+  });
   await row.getByRole('button', { name: 'Revisar pendência' }).click();
   await page
     .getByLabel('Observação da revisão')
     .fill('Conferi a cobertura e proponho revisar apenas termos de marca.');
-  await page.getByLabel('Revisei e aprovo somente esta recomendação.').check();
-  await page.getByRole('button', { name: 'Salvar e aprovar recomendação' }).click();
+  await expect(
+    page.getByText('Salvar esta pendência não inicia uma operação.', { exact: false }),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Salvar pendência', exact: true }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await row.getByRole('button', { name: 'Revisar pendência' }).click();
-  await expect(page.getByRole('dialog')).toContainText('Aprovada em');
-  await expect(page.getByRole('dialog')).toContainText(
-    'nenhuma monitoria, relatório ou alteração no CRM é disparada aqui',
-  );
-  expect(calls.filter((c) => c.approveRecommendation)).toHaveLength(1);
+  await expect(page.getByRole('dialog')).toContainText('personalizar e aprovar a execução');
+  expect(calls.filter((c) => c.approveRecommendation)).toHaveLength(0);
   expect(calls.some((c) => c.approveHelpdesk)).toBe(false);
   expect(calls.some((c) => /generate|monitoria|execute/.test(c.action))).toBe(false);
 });
@@ -819,4 +824,49 @@ test('finishes resumable spreadsheet reads before calling the model', async ({ p
   expect(
     calls.filter((c) => ['readSpreadsheets', 'answer'].includes(c.action)).map((c) => c.action),
   ).toEqual(['readSpreadsheets', 'readSpreadsheets', 'readSpreadsheets', 'answer']);
+});
+
+test('project tools keep SERP and report approvals independent and show durable results', async ({
+  page,
+}) => {
+  const calls = await fixture(page, { cached: true, rich: true });
+  await page.getByLabel('ID do negócio').fill('7');
+  await page.getByRole('button', { name: 'Analisar negócio', exact: true }).click();
+  for (const name of ['SERP Monitor', 'Report Engine']) {
+    await page
+      .getByRole('button', { name: new RegExp(name) })
+      .first()
+      .click();
+    await expect(page.getByRole('heading', { name, exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Personalizar reprocessamento' }).click();
+    await page
+      .getByLabel('Objetivo deste reprocessamento')
+      .fill('Validar a cobertura da marca com as evidências mais recentes.');
+    await page.getByRole('button', { name: 'Revisar aprovação individual' }).click();
+    const approve = page.getByRole('button', {
+      name: `Aprovar e executar no ${name}`,
+      exact: true,
+    });
+    await expect(approve).toBeDisabled();
+    await page
+      .getByLabel('Aprovo somente esta ação, com os parâmetros e efeitos descritos.')
+      .check();
+    await approve.click();
+    await expect(page.getByText('Pedido recebido pelo projeto.', { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Consultar execução existente' }).click();
+    await expect(
+      page.getByText('Resultado confirmado no projeto. Briefing pode ser atualizado.', {
+        exact: true,
+      }),
+    ).toBeVisible();
+    await page.getByRole('button', { name: 'Voltar ao briefing', exact: true }).click();
+  }
+  expect(calls.filter((c) => c.action === 'approveProjectAction')).toHaveLength(2);
+  expect(
+    calls.filter((c) => c.action === 'prepareProjectAction').map((c) => c.parameters.system),
+  ).toEqual(['serp', 'reports']);
+  expect(calls.find((c) => c.action === 'prepareProjectAction').parameters.cities).toEqual([
+    'São Paulo,Brazil',
+    'Campinas,Brazil',
+  ]);
 });

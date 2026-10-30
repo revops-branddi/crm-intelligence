@@ -1,3 +1,4 @@
+import { ProjectWorkspace } from './ProjectWorkspace';
 import { useEffect, useState } from 'react';
 import {
   Building2,
@@ -132,7 +133,16 @@ export function BriefingDashboard({
           </button>
         ))}
       </nav>
+      <ProjectWorkspace
+        key={view === 'serp' || view === 'reports' ? view : 'launchers'}
+        snapshot={snapshot}
+        system={['serp', 'reports'].includes(view) ? view : null}
+        onOpen={setView}
+        onBack={() => setView('briefing')}
+        onComplete={onGenerate}
+      />
       <PreparationWorkflow
+        key={`preparation:${view}`}
         snapshot={snapshot}
         record={record}
         view={view}
