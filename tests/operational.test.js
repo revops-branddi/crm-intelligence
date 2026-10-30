@@ -257,6 +257,8 @@ test('low yield, failures, waiting and unknown coverage lead to distinct recomme
     const result = operationalPreparation(c.pages, buildSources(c.pages), snapshot, null, now);
     const item = result.items.find((i) => i.id === `operation:serp:${id}`);
     assert.equal(item.kind, kind);
+    assert.ok(item.citations.some((ref) => /Execução e1|Campanha c1/.test(ref.quote)));
+    assert.ok(item.citations.every((ref) => ref.quote !== 'Consulta: Consultado'));
     assert.ok(
       !result.items.some((i) => /bbp|gd/.test(i.id)),
       'do not demand unrelated product reports',

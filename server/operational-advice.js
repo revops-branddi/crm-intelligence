@@ -83,12 +83,27 @@ export function operationalPreparation(pages, sources, snapshot, scope, now = Da
   const items = [],
     summary = [];
   const add = (record, code, title, found, basis, kind = 'recommendation') => {
-    const source = sources.find(
-      (s) => s.kind === 'operational' && s.taskKey === record.taskKey && s.part === 0,
-    );
-    const quote = source?.text
-      .split('\n')
-      .find((line) => /Campanha |Relatório |consulta=|Consulta:/.test(line));
+    const lines = sources
+      .filter((s) => s.kind === 'operational' && s.taskKey === record.taskKey)
+      .flatMap((source) =>
+        source.text.split('\n').map((quote) => ({ sourceId: source.id, quote })),
+      );
+    const relevantLine = (quote) => {
+      if (record.status !== 'read') return quote.startsWith('Consulta:');
+      if (record.id === 'reports') {
+        const product = code.split(':')[0];
+        return quote.startsWith(`Relatório ${product}/`) || quote.startsWith(`${labels[product]}:`);
+      }
+      const campaign = record.facts.campaigns[0];
+      if (!campaign) return quote.startsWith('Campanhas:');
+      return (
+        quote.startsWith(`Campanha ${campaign.id}:`) ||
+        quote.startsWith(`Execução ${campaign.executions[0]?.id}:`)
+      );
+    };
+    const citations = lines
+      .filter((ref) => ref.quote.length <= 1200 && relevantLine(ref.quote))
+      .slice(0, 3);
     const id = `operation:${record.id}:${code}`;
     items.push({
       id,
@@ -112,7 +127,7 @@ export function operationalPreparation(pages, sources, snapshot, scope, now = Da
           ]),
         )
         .digest('hex'),
-      citations: source && quote ? [{ sourceId: source.id, quote }] : [],
+      citations,
     });
   };
   const productText = `${scope?.product || ''} ${snapshot.title || ''}`;
