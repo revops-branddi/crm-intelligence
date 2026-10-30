@@ -109,10 +109,15 @@ async function fixture(
     operational = false,
     projectScopeConfirmed = true,
     multipleCampaigns = false,
+    queueDetail,
   } = {},
 ) {
   const calls = [];
-  const project = projectFixture({ scopeConfirmed: projectScopeConfirmed, multipleCampaigns });
+  const project = projectFixture({
+    scopeConfirmed: projectScopeConfirmed,
+    multipleCampaigns,
+    queueDetail,
+  });
   const cachedAnswer = answer('overview');
   if (rich) cachedAnswer.answer.sections = richSections();
   const workflowUser = { id: '11111111-1111-4111-8111-111111111111', email: 'tester@branddi.test' };
@@ -932,6 +937,37 @@ test('monitoring can be customized before scope confirmation and saved as an una
   expect(calls.filter((c) => c.action === 'approveProjectAction')).toHaveLength(0);
   await page.getByText('Propostas salvas e histórico', { exact: true }).click();
   await expect(page.getByRole('button', { name: /Aguardando aprovação/ })).toBeVisible();
+});
+
+test('scheduled monitoring is visible with its time without starting a new execution', async ({
+  page,
+}) => {
+  const calls = await fixture(page, {
+    cached: true,
+    company: true,
+    queueDetail: {
+      observed_at: '2026-10-30T20:00:00Z',
+      ready_tasks: 0,
+      scheduled_tasks: 162,
+      processing_tasks: 0,
+      stale_processing_tasks: 0,
+      unknown_schedule_tasks: 0,
+      next_scheduled_at: '2026-10-30T22:00:00Z',
+      oldest_ready_at: null,
+      last_updated_at: null,
+    },
+  });
+  await page.getByLabel('ID do negócio').fill('7');
+  await page.getByRole('button', { name: 'Analisar negócio', exact: true }).click();
+  await page.getByRole('button', { name: /SERP Monitor Cobertura/ }).click();
+  await expect(
+    page.getByText('162 agendadas · 0 aguardando processamento · 0 em execução'),
+  ).toBeVisible();
+  await expect(page.getByText(/Próximo horário:/)).toBeVisible();
+  await expect(page.getByText(/Nova coleta liberada quando a fila zerar/)).toBeVisible();
+  expect(
+    calls.filter((c) => ['prepareProjectAction', 'approveProjectAction'].includes(c.action)),
+  ).toHaveLength(0);
 });
 
 test('report starts with combined evidence, permits manual selection and keeps approval separate', async ({

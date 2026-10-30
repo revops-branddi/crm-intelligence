@@ -14,6 +14,8 @@ SERP Monitor e Report Engine abrem áreas próprias dentro do CRM Intelligence, 
 
 O relatório propõe combinar as campanhas com captura concluída e cobertura comprovada nos últimos 30 dias. A pessoa pode selecionar as campanhas, os termos e o período manualmente. Termos precisam existir em ao menos uma das campanhas escolhidas; a origem valida cada vínculo. A aprovação congela a seleção exata. O Report Engine aplica `onlyIfBetter`: prioriza anunciantes distintos e desempata pelo volume de anúncios, mantendo seus gates de qualidade e as datas da versão preservada. Consultas SERP concluídas e anunciantes do relatório são métricas diferentes.
 
+O painel SERP separa tarefas agendadas, liberadas aguardando processamento e em execução. Exibe próximo horário, espera desde a liberação e reservas vencidas quando a fonte fornece `queue_detail`. Uma fonte antiga mostra horários indisponíveis; não presume fila saudável. Os horários representam a consulta indicada, não uma promessa de início. Nenhuma classificação antecipa tarefas ou remove o bloqueio de nova coleta enquanto houver fila.
+
 ## Publicação e operação
 
 Aplicar `20261030150000_project_executions.sql` no banco CRM e a migração de recibos no Report Engine antes de publicar os três projetos existentes por Git. As tabelas são privadas, sem acesso direto do navegador.

@@ -1,4 +1,8 @@
-export function projectFixture({ scopeConfirmed = true, multipleCampaigns = false } = {}) {
+export function projectFixture({
+  scopeConfirmed = true,
+  multipleCampaigns = false,
+  queueDetail,
+} = {}) {
   const jobs = [];
   const campaign = {
     id: 'synthetic-c1',
@@ -56,6 +60,14 @@ export function projectFixture({ scopeConfirmed = true, multipleCampaigns = fals
       },
     },
   };
+  if (queueDetail) {
+    campaign.queue_detail = queueDetail;
+    campaign.queued_tasks =
+      queueDetail.ready_tasks +
+      queueDetail.scheduled_tasks +
+      queueDetail.processing_tasks +
+      queueDetail.unknown_schedule_tasks;
+  }
   context.defaults = { brands: ['Lume'], domains: ['lume.example.test'] };
   if (multipleCampaigns)
     context.operations.serp.facts.campaigns.push({

@@ -35,6 +35,19 @@ const monitoringSchema = z.object({
         is_active: z.boolean().nullable(),
         status: nullable,
         queued_tasks: count,
+        queue_detail: z
+          .object({
+            observed_at: z.string().datetime({ offset: true }),
+            ready_tasks: count,
+            scheduled_tasks: count,
+            processing_tasks: count,
+            stale_processing_tasks: count,
+            unknown_schedule_tasks: count,
+            next_scheduled_at: date,
+            oldest_ready_at: date,
+            last_updated_at: date,
+          })
+          .optional(),
         spreadsheet_attached_at: date,
         configuration: z.object({
           keywords: list,
