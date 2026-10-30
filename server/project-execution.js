@@ -3,6 +3,10 @@ import { z } from 'zod';
 import { checked, HttpError } from './errors.js';
 import { idOf } from './pipedrive.js';
 import { latestOperations, readSavedOperations } from './operational-reading.js';
+import { buildSources } from './sources.js';
+import { companyContext } from './company-context.js';
+import { scopeDefaults } from './preparation.js';
+import { operationalPreparation } from './operational-advice.js';
 const text = z.string().trim().min(1).max(150);
 export const projectParameters = z.discriminatedUnion('system', [
   z
@@ -180,9 +184,19 @@ export async function projectAction(input, ctx) {
       force: input.refresh,
     });
     const people = (await client.get('/api/v1/users')).data || [];
+    const sources = buildSources(pages);
+    const defaults = scopeDefaults(snapshot, companyContext(sources));
+    const recommendations = operationalPreparation(
+      pages,
+      sources,
+      snapshot,
+      scope || defaults,
+    ).items;
     return {
       operations: records(pages),
       scope,
+      defaults,
+      recommendations,
       assignees: people
         .filter((p) => p.active_flag !== false && p.active_flag !== 0 && p.id && p.name)
         .map((p) => ({ id: String(p.id), name: p.name })),

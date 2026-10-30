@@ -63,6 +63,60 @@ function context() {
   };
 }
 const call = (ctx, action, fields = {}) => preparationAction({ action, ...fields }, ctx);
+const storedJson = (value) =>
+  JSON.parse(
+    JSON.stringify(value, (_key, item) =>
+      item && typeof item === 'object' && !Array.isArray(item)
+        ? Object.fromEntries(
+            Object.entries(item).sort(([a], [b]) => a.length - b.length || a.localeCompare(b)),
+          )
+        : item,
+    ),
+  );
+test('JSONB key order does not create revisions or block a scope confirmation', async () => {
+  const ctx = context();
+  const first = await call(ctx, 'preparation');
+  const row = ctx.db.tables.crm_preparation_workflows[0];
+  row.state = storedJson(row.state);
+  const reread = await call(ctx, 'preparation');
+  assert.equal(reread.revision, first.revision);
+  const saved = await call(ctx, 'saveScope', { revision: reread.revision, scope, assigneeId: '9' });
+  assert.equal(saved.revision, first.revision + 1);
+  row.state = storedJson(row.state);
+  assert.equal((await call(ctx, 'preparation')).revision, saved.revision);
+});
+test('fresh automatic facts do not conflict with scope save, but changed task evidence requires review', async () => {
+  const ctx = context();
+  const first = await call(ctx, 'preparation');
+  ctx.sources = [
+    ...sources,
+    {
+      id: 'note:new',
+      kind: 'notes',
+      recordId: '2',
+      text: 'deal_id: 7\nFaz parte de grupo: Pertence ao Grupo Novo.',
+    },
+  ];
+  const saved = await call(ctx, 'saveScope', { revision: first.revision, scope, assigneeId: '9' });
+  assert.equal(saved.scope.brands[0], 'Lume');
+  assert.equal(saved.revision, first.revision + 1);
+  ctx.sources = sources;
+  await assert.rejects(
+    () =>
+      call(ctx, 'savePreparationTask', {
+        revision: saved.revision,
+        taskId: 'group-registration',
+        assigneeId: '9',
+        status: 'in_progress',
+        note: 'Conferido nas fontes antes da mudança.',
+        dueDate: '',
+        approveHelpdesk: true,
+      }),
+    (e) => e.code === 'workflow_conflict',
+  );
+  const latest = await call(ctx, 'preparation');
+  assert.equal(latest.tasks.find((t) => t.id === 'group-registration').approval, null);
+});
 test('group notice is explicit, excludes negative membership and keeps uncertain variants', () => {
   assert.equal(
     groupNotice({

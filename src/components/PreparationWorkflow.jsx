@@ -27,7 +27,7 @@ function Assignee({ value, onChange, people }) {
     </label>
   );
 }
-function ScopeForm({ data, onSave, busy }) {
+export function ScopeForm({ data, onSave, busy }) {
   const initial = data.scope || data.defaults;
   const [form, setForm] = useState({
     ...initial,
@@ -147,7 +147,9 @@ function TaskForm({ task, data, snapshot, busy, onSave, onSource }) {
   const [note, setNote] = useState(task.note || '');
   const [dueDate, setDueDate] = useState(task.dueDate || '');
   const [draft, setDraft] = useState(initialDraft);
-  const [approve, setApprove] = useState(false);
+  const [approvalRevision, setApprovalRevision] = useState(null);
+  const approve = approvalRevision === data.revision;
+  const setApprove = (value) => setApprovalRevision(value ? data.revision : null);
   const approved = task.approval && JSON.stringify(draft) === JSON.stringify(task.draft);
   const hub = approved && helpdeskDraftUrl(draft);
   return (
@@ -400,7 +402,17 @@ export function PreparationWorkflow({
       if (close) setSelected(null);
       return true;
     } catch (e) {
-      setError(e.message);
+      if (e.code === 'workflow_conflict') {
+        try {
+          const latest = await apiRequest('preparation', { snapshotId: snapshot.id });
+          setData(latest);
+          setError(
+            'A preparação foi atualizada. Seus campos foram mantidos; revise e salve novamente.',
+          );
+        } catch {
+          setError(e.message);
+        }
+      } else setError(e.message);
       return false;
     } finally {
       setBusy(false);
@@ -417,7 +429,6 @@ export function PreparationWorkflow({
         type="button"
         disabled={busy}
         onClick={() => {
-          setSelected(null);
           setRetry((r) => r + 1);
         }}
       >
