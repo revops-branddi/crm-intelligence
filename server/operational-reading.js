@@ -100,6 +100,7 @@ const reportsSchema = z.object({
               linked_in_crm: z.boolean(),
               generated_at: date,
               record_created_at: date.optional(),
+              summary_observed_at: date.optional(),
               brand: nullable.optional(),
               domain: nullable.optional(),
               advertisers_count: count.optional(),

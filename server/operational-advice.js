@@ -66,11 +66,11 @@ export function operationalText(record) {
       );
       for (const r of p.reports)
         lines.push(
-          `Relatório ${p.product}/${r.slug}: status=${value(r.status)}; gerado=${value(r.generated_at)}; vinculado no card=${r.linked_in_crm ? 'sim' : 'não'}; anunciantes=${value(r.advertisers_count)}; ameaças de preço=${value(r.price_threats)}; suspeitos GD=${value(r.suspicious)}; URL=${r.url}.`,
+          `Relatório ${p.product}/${r.slug}: status=${value(r.status)}; gerado=${value(r.generated_at)}; agregado GD consultado=${value(r.summary_observed_at)}; vinculado no card=${r.linked_in_crm ? 'sim' : 'não'}; anunciantes=${value(r.advertisers_count)}; ameaças de preço=${value(r.price_threats)}; suspeitos GD=${value(r.suspicious)}; URL=${r.url}.`,
         );
     }
     lines.push(
-      'Ausência é restrita ao deal ou link canônico. Não exige relatórios de produtos fora do escopo. Data de geração não é data da captura. Pronto não significa revisado ou enviado.',
+      'Ausência é restrita ao deal ou link canônico. Não exige relatórios de produtos fora do escopo. Data de geração não é data da captura. GD é uma visão dinâmica; agregado consultado não comprova data de geração ou atualidade das evidências. Pronto não significa revisado ou enviado.',
     );
   }
   return lines.join('\n');

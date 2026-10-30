@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { memoryDb } from './memory-db.js';
 import { readSavedOperations, latestOperations } from '../server/operational-reading.js';
-import { operationalPreparation } from '../server/operational-advice.js';
+import { operationalPreparation, operationalText } from '../server/operational-advice.js';
 import { buildSources, selectContext } from '../server/sources.js';
 import { preparationAction, synchronizeTasks } from '../server/preparation.js';
 import { handleAction } from '../server/api-handler.js';
@@ -412,4 +412,43 @@ test('answer action rechecks CRM visibility and automatically collects both prov
     (error) => error.status === 403,
   );
   assert.equal(modelCalls, 1);
+});
+
+test('GD live aggregation date stays distinct from report generation and does not suggest regeneration', () => {
+  const f = fixtures();
+  f.reports.products[2] = {
+    product: 'gd',
+    linked_in_crm: true,
+    state: 'found',
+    scope: 'exact_deal_or_canonical_crm_link',
+    reports: [
+      {
+        slug: 'marca',
+        status: 'ready',
+        linked_in_crm: true,
+        url: 'https://report.branddi.com/marca/gd',
+        generated_at: null,
+        summary_observed_at: new Date(now).toISOString(),
+      },
+    ],
+  };
+  const record = {
+    id: 'reports',
+    name: 'Report Engine',
+    readerVersion: 'crm-operational-v1',
+    status: 'read',
+    readAt: new Date(now).toISOString(),
+    facts: f.reports,
+  };
+  const page = { kind: 'operational', task_key: 'gd-clock', payload: { data: record } };
+  assert.match(
+    operationalText(record),
+    /gerado=não informado; agregado GD consultado=2026-10-29T16:00:00.000Z/,
+  );
+  assert.equal(
+    operationalPreparation([page], [], snapshot, {}, now).items.some((i) =>
+      i.id.includes('gd:age'),
+    ),
+    false,
+  );
 });
