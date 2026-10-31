@@ -110,6 +110,7 @@ async function fixture(
     projectScopeConfirmed = true,
     multipleCampaigns = false,
     queueDetail,
+    projectOptions = {},
   } = {},
 ) {
   const calls = [];
@@ -117,6 +118,7 @@ async function fixture(
     scopeConfirmed: projectScopeConfirmed,
     multipleCampaigns,
     queueDetail,
+    ...projectOptions,
   });
   const cachedAnswer = answer('overview');
   if (rich) cachedAnswer.answer.sections = richSections();
@@ -846,10 +848,23 @@ test('project tools keep SERP and report approvals independent and show durable 
       .click();
     await expect(page.getByRole('heading', { name, exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Personalizar reprocessamento' }).click();
+    if (name === 'Report Engine')
+      await page.getByRole('button', { name: 'Revisar aprovação individual' }).click();
     await page
-      .getByLabel('Objetivo deste reprocessamento')
+      .getByLabel(
+        name === 'Report Engine'
+          ? 'Justificativa da atualização'
+          : 'Objetivo deste reprocessamento',
+      )
       .fill('Validar a cobertura da marca com as evidências mais recentes.');
-    await page.getByRole('button', { name: 'Revisar aprovação individual' }).click();
+    await page
+      .getByRole('button', {
+        name:
+          name === 'Report Engine'
+            ? 'Salvar proposta para aprovação'
+            : 'Revisar aprovação individual',
+      })
+      .click();
     const approve = page.getByRole('button', {
       name: `Aprovar e executar no ${name}`,
       exact: true,
@@ -988,15 +1003,17 @@ test('report starts with combined evidence, permits manual selection and keeps a
   await page.getByRole('button', { name: 'Analisar negócio', exact: true }).click();
   await page.getByRole('button', { name: /Report Engine Evidências/ }).click();
   await page.getByRole('button', { name: 'Personalizar reprocessamento' }).click();
-  await expect(page.getByLabel('Palavras-chave exatas')).toHaveValue('lume, lume promoção');
-  await page.getByText('Campanhas de origem · 2 selecionada(s)').click();
+  await expect(page.getByRole('group', { name: 'Palavras-chave incluídas' })).toBeHidden();
+  await page.getByText('Filtros avançados · 2 de 2 palavras-chave').click();
+  await expect(page.getByRole('checkbox', { name: 'lume promoção', exact: true })).toBeChecked();
   await page.getByRole('checkbox', { name: /synthetic-c2/ }).uncheck();
-  await expect(page.getByLabel('Palavras-chave exatas')).toHaveValue('lume');
-  await page.getByLabel('Janela das evidências (dias)').fill('7');
-  await page
-    .getByLabel('Objetivo deste reprocessamento')
-    .fill('Reprocessar a campanha selecionada na janela personalizada.');
+  await expect(page.getByRole('checkbox', { name: 'lume promoção', exact: true })).toHaveCount(0);
+  await page.getByLabel('Período das evidências (dias)').fill('7');
   await page.getByRole('button', { name: 'Revisar aprovação individual' }).click();
+  await page
+    .getByLabel('Justificativa da atualização')
+    .fill('Reprocessar a campanha selecionada na janela personalizada.');
+  await page.getByRole('button', { name: 'Salvar proposta para aprovação' }).click();
   const prepared = calls.filter((c) => c.action === 'prepareProjectAction').at(-1);
   expect(prepared.parameters.campaignIds).toEqual(['synthetic-c1']);
   expect(prepared.parameters.lookbackDays).toBe(7);
@@ -1118,4 +1135,158 @@ test('city picker searches without accents, preserves exact payload and caps sel
     'Santos,Brazil',
   ]);
   expect(calls.filter((c) => c.action === 'approveProjectAction')).toHaveLength(0);
+});
+
+test('report filters select only completed captures, preserve manual choices and adapt to the period', async ({
+  page,
+}) => {
+  const calls = await fixture(page, {
+    cached: true,
+    multipleCampaigns: true,
+    projectOptions: { mixedCampaigns: true },
+  });
+  await page.getByLabel('ID do negócio').fill('7');
+  await page.getByRole('button', { name: 'Analisar negócio', exact: true }).click();
+  await page.getByRole('button', { name: /Report Engine Evidências/ }).click();
+  await page.getByRole('button', { name: 'Personalizar reprocessamento' }).click();
+  const collections = page.getByRole('group', { name: 'Coletas concluídas', exact: true });
+  await expect(collections.getByRole('checkbox')).toHaveCount(3);
+  await expect(
+    collections.getByRole('checkbox', { name: /queued|running|too-old|incomplete/ }),
+  ).toHaveCount(0);
+  await expect(page.getByRole('combobox', { name: 'Responsável', exact: true })).toHaveCount(0);
+  await page.getByLabel('Período das evidências (dias)').fill('7');
+  await expect(collections.getByRole('checkbox')).toHaveCount(2);
+  await page.getByLabel('Período das evidências (dias)').fill('30');
+  await expect(collections.getByRole('checkbox', { name: /older-valid/ })).toBeChecked();
+  await page.getByText('Filtros avançados · 2 de 2 palavras-chave').click();
+  await page.getByRole('checkbox', { name: 'lume promoção', exact: true }).uncheck();
+  await collections.getByRole('checkbox', { name: /synthetic-c1/ }).uncheck();
+  await page.getByLabel('Período das evidências (dias)').fill('7');
+  await expect(page.getByRole('button', { name: 'Revisar aprovação individual' })).toBeDisabled();
+  await expect(
+    page.getByRole('alert').filter({ hasText: 'Selecione ao menos uma palavra-chave' }),
+  ).toBeVisible();
+  await page.getByRole('checkbox', { name: 'lume promoção', exact: true }).check();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect
+    .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth))
+    .toBe(true);
+  await page.getByRole('button', { name: 'Revisar aprovação individual' }).click();
+  expect(calls.filter((c) => c.action === 'prepareProjectAction')).toHaveLength(0);
+  await page.getByRole('combobox', { name: 'Responsável', exact: true }).selectOption('10');
+  await page.getByRole('button', { name: 'Voltar aos filtros' }).click();
+  await expect(collections.getByRole('checkbox', { name: /synthetic-c1/ })).not.toBeChecked();
+  await expect(collections.getByRole('checkbox', { name: /synthetic-c2/ })).toBeChecked();
+  await page.getByRole('button', { name: 'Revisar aprovação individual' }).click();
+  await expect(page.getByRole('combobox', { name: 'Responsável', exact: true })).toHaveValue('10');
+  await page.getByRole('button', { name: 'Salvar proposta para aprovação' }).click();
+  const request = calls.find((c) => c.action === 'prepareProjectAction');
+  expect(request.parameters).toMatchObject({
+    campaignIds: ['synthetic-c2'],
+    keywords: ['lume promoção'],
+    lookbackDays: 7,
+    brand: 'Lume',
+    domain: 'lume.example.test',
+    slug: 'lume',
+  });
+  expect(request.assigneeId).toBe('10');
+  expect(calls.filter((c) => c.action === 'approveProjectAction')).toHaveLength(0);
+  await page.getByRole('button', { name: 'Revisar parâmetros' }).click();
+  await expect(page.getByLabel('Período das evidências (dias)')).toHaveValue('7');
+  await expect(collections.getByRole('checkbox', { name: /synthetic-c2/ })).toBeChecked();
+  await expect(collections.getByRole('checkbox', { name: /synthetic-c1/ })).not.toBeChecked();
+  await page.getByRole('button', { name: 'Revisar aprovação individual' }).click();
+  await expect(page.getByRole('combobox', { name: 'Responsável', exact: true })).toHaveValue('10');
+});
+
+for (const scenario of [
+  {
+    name: 'growth',
+    status: 'completed',
+    counts: { previousAdvertisers: 1, publishedAdvertisers: 4 },
+    before: '1',
+    after: '4',
+    message: '+3 anunciantes distintos',
+  },
+  {
+    name: 'preserved',
+    status: 'preserved',
+    counts: { previousAdvertisers: 4, publishedAdvertisers: 4 },
+    before: '4',
+    after: '4',
+    message: 'A versão anterior foi preservada',
+  },
+  {
+    name: 'zero',
+    status: 'completed',
+    counts: { previousAdvertisers: 0, publishedAdvertisers: 2 },
+    before: '0',
+    after: '2',
+    message: '+2 anunciantes distintos',
+  },
+  {
+    name: 'missing',
+    status: 'completed',
+    counts: {},
+    before: 'Não informado',
+    after: 'Não informado',
+    message: 'O recibo não informa a comparação completa.',
+  },
+]) {
+  test(`report shows receipt-based before/after (${scenario.name}) without another execution`, async ({
+    page,
+  }) => {
+    const calls = await fixture(page, {
+      cached: true,
+      projectOptions: { reportStatus: scenario.status, reportResult: scenario.counts },
+    });
+    await page.getByLabel('ID do negócio').fill('7');
+    await page.getByRole('button', { name: 'Analisar negócio', exact: true }).click();
+    await page.getByRole('button', { name: /Report Engine Evidências/ }).click();
+    await page.getByRole('button', { name: 'Personalizar reprocessamento' }).click();
+    await page.getByRole('button', { name: 'Revisar aprovação individual' }).click();
+    await page.getByRole('button', { name: 'Salvar proposta para aprovação' }).click();
+    const approve = page.getByRole('button', { name: 'Aprovar e executar no Report Engine' });
+    await expect(approve).toBeDisabled();
+    await page
+      .getByLabel('Aprovo somente esta ação, com os parâmetros e efeitos descritos.')
+      .check();
+    await approve.click();
+    await expect(page.getByRole('region', { name: 'Resultado do relatório' })).toHaveCount(0);
+    await page.getByRole('button', { name: 'Consultar execução existente' }).click();
+    const result = page.getByRole('region', { name: 'Resultado do relatório' });
+    await expect(result).toBeVisible();
+    await expect(result.locator('dd').nth(0)).toHaveText(scenario.before);
+    await expect(result.locator('dd').nth(1)).toHaveText(scenario.after);
+    await expect(result).toContainText(scenario.message);
+    await page.getByRole('button', { name: 'Análise', exact: true }).click();
+    await expect(result).toBeVisible();
+    expect(calls.filter((c) => c.action === 'approveProjectAction')).toHaveLength(1);
+    expect(calls.filter((c) => c.action === 'prepareProjectAction')).toHaveLength(1);
+    expect(calls.some((c) => ['start', 'step'].includes(c.action))).toBe(false);
+  });
+}
+
+test('report empty state prevents preparing an action with pending collections', async ({
+  page,
+}) => {
+  const calls = await fixture(page, {
+    cached: true,
+    queueDetail: {
+      ready_tasks: 0,
+      scheduled_tasks: 2,
+      processing_tasks: 0,
+      unknown_schedule_tasks: 0,
+    },
+  });
+  await page.getByLabel('ID do negócio').fill('7');
+  await page.getByRole('button', { name: 'Analisar negócio', exact: true }).click();
+  await page.getByRole('button', { name: /Report Engine Evidências/ }).click();
+  await page.getByRole('button', { name: 'Personalizar reprocessamento' }).click();
+  await expect(page.getByText(/Nenhuma coleta concluída neste período/)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Revisar aprovação individual' })).toBeDisabled();
+  expect(
+    calls.filter((c) => ['prepareProjectAction', 'approveProjectAction'].includes(c.action)),
+  ).toHaveLength(0);
 });

@@ -2,6 +2,9 @@ export function projectFixture({
   scopeConfirmed = true,
   multipleCampaigns = false,
   queueDetail,
+  mixedCampaigns = false,
+  reportStatus = 'completed',
+  reportResult = { previousAdvertisers: 1, publishedAdvertisers: 4 },
 } = {}) {
   const jobs = [];
   const campaign = {
@@ -48,6 +51,8 @@ export function projectFixture({
                 {
                   slug: 'lume',
                   brand: 'Lume',
+                  domain: 'lume.example.test',
+                  advertisers_count: 1,
                   status: 'completed',
                   linked_in_crm: true,
                   generated_at: '2026-10-20T12:00:00Z',
@@ -76,6 +81,27 @@ export function projectFixture({
       configuration: { ...campaign.configuration, keywords: ['lume promoção'] },
     });
   if (!scopeConfirmed) context.scope = null;
+  if (mixedCampaigns) {
+    const extra = (id, days, patch = {}) => ({
+      ...campaign,
+      id,
+      ...patch,
+      executions: [
+        {
+          ...campaign.executions[0],
+          finished_at: new Date(Date.now() - days * 86400000).toISOString(),
+          ...patch.execution,
+        },
+      ],
+    });
+    context.operations.serp.facts.campaigns.push(
+      extra('older-valid', 14),
+      extra('too-old', 45),
+      extra('queued', 1, { queued_tasks: 2 }),
+      extra('running', 1, { execution: { status: 'running' } }),
+      extra('incomplete', 1, { execution: { queue_completed_tasks: 2 } }),
+    );
+  }
   return function (request) {
     if (request.action === 'projectContext') return { ...context, executions: [...jobs] };
     if (request.action === 'prepareProjectAction') {
@@ -100,8 +126,18 @@ export function projectFixture({
       j.result = { message: 'Pedido recebido pelo projeto.' };
     }
     if (request.action === 'projectExecution') {
-      j.status = 'completed';
-      j.result = { message: 'Resultado confirmado no projeto. Briefing pode ser atualizado.' };
+      j.status = j.system === 'reports' ? reportStatus : 'completed';
+      j.result = {
+        message: 'Resultado confirmado no projeto. Briefing pode ser atualizado.',
+        ...(j.system === 'reports' && {
+          result: {
+            ...reportResult,
+            generatedAt: new Date().toISOString(),
+            lookbackDays: j.parameters.lookbackDays,
+            campaignIds: j.parameters.campaignIds,
+          },
+        }),
+      };
     }
     return { execution: j };
   };

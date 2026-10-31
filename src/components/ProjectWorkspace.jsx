@@ -3,7 +3,9 @@ import { Radar, FileChartColumn, ArrowLeft, RefreshCw, CheckCircle2 } from 'luci
 import { apiRequest } from '../services/api';
 import { ScopeForm } from './PreparationWorkflow';
 import { DetailSheet } from './DetailSheet';
-import { reportCampaigns, reportKeywords } from '../services/report-evidence';
+import { ScopeSummary } from './ProjectScopeSummary';
+import { ReportProposal } from './ReportProposal';
+import { ReportResult } from './ReportResult';
 import { CityPicker } from './CityPicker';
 import './project-workspace.css';
 const names = { serp: 'SERP Monitor', reports: 'Report Engine' };
@@ -184,105 +186,6 @@ function Facts({ system, data, onPrioritize, busy }) {
     </div>
   );
 }
-function ScopeSummary({ p }) {
-  if (p.action === 'prioritize')
-    return (
-      <dl className="project-scope">
-        <div>
-          <dt>Coleta existente</dt>
-          <dd>{p.campaignId}</dd>
-        </div>
-        <div>
-          <dt>Marca</dt>
-          <dd>
-            {p.brand} · {p.domains.join(', ')}
-          </dd>
-        </div>
-        <div>
-          <dt>Ação</dt>
-          <dd>Priorizar até {p.expectedReadyTasks} tarefas já liberadas.</dd>
-        </div>
-        <div>
-          <dt>Efeito</dt>
-          <dd>
-            Mantém horários, tentativas e limites. Não cria buscas, não cancela a coleta e não
-            altera tarefas em execução.
-          </dd>
-        </div>
-      </dl>
-    );
-  return (
-    <dl className="project-scope">
-      <div>
-        <dt>Marca</dt>
-        <dd>{p.brand}</dd>
-      </div>
-      <div>
-        <dt>Domínios</dt>
-        <dd>{p.domains?.join(', ') || p.domain}</dd>
-      </div>
-      <div>
-        <dt>Termos</dt>
-        <dd>{p.keywords.join(' · ')}</dd>
-      </div>
-      {p.system === 'serp' ? (
-        <>
-          <div>
-            <dt>Cidades e dispositivos</dt>
-            <dd>
-              {p.cities.join(' · ')} · {p.devices.join(', ')}
-            </dd>
-          </div>
-          <div>
-            <dt>Plano</dt>
-            <dd>
-              {p.keywords.length * p.cities.length * p.devices.length * p.rounds} buscas ·{' '}
-              {p.rounds} rodada(s) · prazo de {p.windowHours}h
-            </dd>
-          </div>
-          <div>
-            <dt>Limite total</dt>
-            <dd>{p.maxRequests} consultas, incluindo novas tentativas. Sem renovação.</dd>
-          </div>
-          <div>
-            <dt>Exceção de etapa</dt>
-            <dd>
-              {p.allowStageException
-                ? 'Aprovada para a etapa atual'
-                : 'Somente etapas permitidas pelo SERP'}
-            </dd>
-          </div>
-        </>
-      ) : (
-        <>
-          <div>
-            <dt>Relatório</dt>
-            <dd>
-              {p.mode === 'generate' ? 'Gerar' : 'Reprocessar'} · {p.slug}
-            </dd>
-          </div>
-          <div>
-            <dt>Evidências</dt>
-            <dd>
-              Últimos {p.lookbackDays} dias · {p.campaignIds.join(', ')}
-            </dd>
-          </div>
-          <div>
-            <dt>Regra de atualização</dt>
-            <dd>
-              Prioriza mais anunciantes; em empate, mais anúncios. Preserva a versão anterior se o
-              novo resultado perder volume dentro da janela.
-            </dd>
-          </div>
-          <div>
-            <dt>Publicação</dt>
-            <dd>O link público pode ser atualizado. Sem envio ao lead ou alteração da etapa.</dd>
-          </div>
-        </>
-      )}
-    </dl>
-  );
-}
 function PriorityProposal({ campaign, data, busy, onPrepare }) {
   const [assigneeId, setAssigneeId] = useState(data.defaultAssigneeId);
   const [reason, setReason] = useState(
@@ -340,30 +243,21 @@ function PriorityProposal({ campaign, data, busy, onPrepare }) {
     </form>
   );
 }
-function Proposal({ system, data, onPrepare, onConfirmScope, busy }) {
+function Proposal({ data, onPrepare, onConfirmScope, busy }) {
+  const system = 'serp';
   const camps = data.operations.serp?.facts?.campaigns || [];
-  const reports =
-    data.operations.reports?.facts?.products.find((p) => p.product === 'bb')?.reports || [];
-  const first = camps[0],
-    report = reports.find((r) => r.linked_in_crm) || reports[0];
+  const first = camps[0];
   const scope = data.scope || data.defaults || { brands: [], domains: [] };
-  const initialCampaigns = reportCampaigns(camps, 30);
   const [values, setForm] = useState({
     brand: scope?.brands?.[0] || '',
     domain: scope?.domains?.[0] || '',
-    keywords:
-      system === 'reports'
-        ? reportKeywords(initialCampaigns).join(', ')
-        : first?.configuration.keywords?.join(', ') || '',
+    keywords: first?.configuration.keywords?.join(', ') || '',
     cities: first?.configuration.cities?.slice(0, 3).join('\n') || 'São Paulo,Brazil',
     devices: 'both',
     rounds: 2,
     windowHours: 12,
     maxRequests: 100,
     allowStageException: false,
-    campaignIds: initialCampaigns.map((c) => c.id),
-    slug: report?.slug || '',
-    lookbackDays: 30,
     assigneeId: data.defaultAssigneeId,
     reason: '',
   });
@@ -378,29 +272,19 @@ function Proposal({ system, data, onPrepare, onConfirmScope, busy }) {
     e.preventDefault();
     setError('');
     const common = { system, brand: form.brand, keywords: split(form.keywords) };
-    const params =
-      system === 'serp'
-        ? {
-            ...common,
-            domains: [form.domain],
-            cities: form.cities
-              .split('\n')
-              .map((c) => c.trim())
-              .filter(Boolean),
-            devices: form.devices === 'both' ? ['desktop', 'mobile'] : [form.devices],
-            rounds: Number(form.rounds),
-            windowHours: Number(form.windowHours),
-            maxRequests: Number(form.maxRequests),
-            allowStageException: form.allowStageException,
-          }
-        : {
-            ...common,
-            domain: form.domain,
-            slug: form.slug || `crm-${data.dealId}-bb`,
-            mode: reports.length ? 'regenerate' : 'generate',
-            lookbackDays: Number(form.lookbackDays),
-            campaignIds: form.campaignIds,
-          };
+    const params = {
+      ...common,
+      domains: [form.domain],
+      cities: form.cities
+        .split('\n')
+        .map((c) => c.trim())
+        .filter(Boolean),
+      devices: form.devices === 'both' ? ['desktop', 'mobile'] : [form.devices],
+      rounds: Number(form.rounds),
+      windowHours: Number(form.windowHours),
+      maxRequests: Number(form.maxRequests),
+      allowStageException: form.allowStageException,
+    };
     try {
       await onPrepare(params, form.assigneeId, form.reason);
     } catch (e) {
@@ -437,73 +321,6 @@ function Proposal({ system, data, onPrepare, onConfirmScope, busy }) {
             ))}
           </select>
         </label>
-        {system === 'reports' && (
-          <>
-            <details className="project-campaigns full">
-              <summary>Campanhas de origem · {form.campaignIds.length} selecionada(s)</summary>
-              <p>
-                Combine coletas do período para ampliar as evidências. O relatório conta anunciantes
-                distintos, sem somar duplicatas entre campanhas.
-              </p>
-              <button
-                type="button"
-                className="secondary"
-                onClick={() => {
-                  const selected = reportCampaigns(camps, form.lookbackDays);
-                  setForm((f) => ({
-                    ...f,
-                    campaignIds: selected.map((c) => c.id),
-                    keywords: reportKeywords(selected).join(', '),
-                  }));
-                }}
-              >
-                Selecionar coletas concluídas do período
-              </button>
-              {camps.map((c) => (
-                <label className="project-consent" key={c.id}>
-                  <input
-                    type="checkbox"
-                    checked={form.campaignIds.includes(c.id)}
-                    disabled={
-                      c.queued_tasks !== 0 ||
-                      c.executions.some((e) => ['pending', 'running'].includes(e.status))
-                    }
-                    onChange={(e) =>
-                      setForm((f) => {
-                        const ids = e.target.checked
-                          ? [...f.campaignIds, c.id]
-                          : f.campaignIds.filter((id) => id !== c.id);
-                        return {
-                          ...f,
-                          campaignIds: ids,
-                          keywords: reportKeywords(
-                            camps.filter((camp) => ids.includes(camp.id)),
-                          ).join(', '),
-                        };
-                      })
-                    }
-                  />
-                  <span>
-                    {c.id} · {date(c.executions[0]?.finished_at)}
-                    {c.queued_tasks > 0 ? ' · Coleta pendente' : ''}
-                  </span>
-                </label>
-              ))}
-            </details>
-            <label className="full">
-              Relatório
-              {reports.length ? (
-                <select value={form.slug} onChange={(e) => change('slug', e.target.value)}>
-                  {reports.map((r) => (
-                    <option key={r.slug}>{r.slug}</option>
-                  ))}
-                </select>
-              ) : (
-                <input value={`Novo relatório deste deal`} readOnly />
-              )}
-            </label>
-          </>
-        )}
         <label className="full">
           Palavras-chave exatas, separadas por vírgula
           <textarea
@@ -513,74 +330,53 @@ function Proposal({ system, data, onPrepare, onConfirmScope, busy }) {
             onChange={(e) => change('keywords', e.target.value)}
           />
         </label>
-        {system === 'serp' ? (
-          <>
-            <CityPicker
-              value={form.cities.split('\n').filter((c) => c.trim())}
-              available={camps.flatMap((c) => c.configuration?.cities || [])}
-              onChange={(cities) => change('cities', cities.join('\n'))}
-            />
-            <label>
-              Dispositivos
-              <select value={form.devices} onChange={(e) => change('devices', e.target.value)}>
-                <option value="both">Desktop e mobile</option>
-                <option value="desktop">Desktop</option>
-                <option value="mobile">Mobile</option>
-              </select>
-            </label>
-            <label>
-              Rodadas
-              <select value={form.rounds} onChange={(e) => change('rounds', e.target.value)}>
-                <option value="1">1 rodada</option>
-                <option value="2">2 rodadas</option>
-              </select>
-            </label>
-            <label>
-              Prazo da coleta
-              <select
-                value={form.windowHours}
-                onChange={(e) => change('windowHours', e.target.value)}
-              >
-                <option value="1">1 hora · coleta rápida</option>
-                <option value="12">12 horas · distribuída</option>
-                <option value="24">24 horas · distribuída</option>
-              </select>
-            </label>
-            <label>
-              Teto total de consultas
-              <input
-                type="number"
-                min="1"
-                max="500"
-                required
-                value={form.maxRequests}
-                onChange={(e) => change('maxRequests', e.target.value)}
-              />
-            </label>
-            <label className="project-consent full">
-              <input
-                type="checkbox"
-                checked={form.allowStageException}
-                onChange={(e) => change('allowStageException', e.target.checked)}
-              />
-              <span>
-                Permitir esta coleta manual na etapa atual, mesmo fora do fluxo automático.
-              </span>
-            </label>
-          </>
-        ) : (
-          <label>
-            Janela das evidências (dias)
-            <input
-              type="number"
-              min="1"
-              max="365"
-              required
-              value={form.lookbackDays}
-              onChange={(e) => change('lookbackDays', e.target.value)}
-            />
-          </label>
-        )}
+        <CityPicker
+          value={form.cities.split('\n').filter((c) => c.trim())}
+          available={camps.flatMap((c) => c.configuration?.cities || [])}
+          onChange={(cities) => change('cities', cities.join('\n'))}
+        />
+        <label>
+          Dispositivos
+          <select value={form.devices} onChange={(e) => change('devices', e.target.value)}>
+            <option value="both">Desktop e mobile</option>
+            <option value="desktop">Desktop</option>
+            <option value="mobile">Mobile</option>
+          </select>
+        </label>
+        <label>
+          Rodadas
+          <select value={form.rounds} onChange={(e) => change('rounds', e.target.value)}>
+            <option value="1">1 rodada</option>
+            <option value="2">2 rodadas</option>
+          </select>
+        </label>
+        <label>
+          Prazo da coleta
+          <select value={form.windowHours} onChange={(e) => change('windowHours', e.target.value)}>
+            <option value="1">1 hora · coleta rápida</option>
+            <option value="12">12 horas · distribuída</option>
+            <option value="24">24 horas · distribuída</option>
+          </select>
+        </label>
+        <label>
+          Teto total de consultas
+          <input
+            type="number"
+            min="1"
+            max="500"
+            required
+            value={form.maxRequests}
+            onChange={(e) => change('maxRequests', e.target.value)}
+          />
+        </label>
+        <label className="project-consent full">
+          <input
+            type="checkbox"
+            checked={form.allowStageException}
+            onChange={(e) => change('allowStageException', e.target.checked)}
+          />
+          <span>Permitir esta coleta manual na etapa atual, mesmo fora do fluxo automático.</span>
+        </label>
         <label>
           Responsável
           <select
@@ -614,24 +410,15 @@ function Proposal({ system, data, onPrepare, onConfirmScope, busy }) {
         </p>
       )}
       <div className="project-plan-summary" role="status">
-        {system === 'serp'
-          ? `${split(form.keywords).length} termos × ${form.cities.split('\n').filter((c) => c.trim()).length} cidades × ${form.devices === 'both' ? 2 : 1} dispositivos × ${form.rounds} rodadas = ${split(form.keywords).length * form.cities.split('\n').filter((c) => c.trim()).length * (form.devices === 'both' ? 2 : 1) * Number(form.rounds)} buscas planejadas. Teto: ${form.maxRequests} consultas, incluindo tentativas.`
-          : `Brand Bidding · últimos ${form.lookbackDays} dias · ${split(form.keywords).length} termos · ${form.campaignIds.length} campanha(s) selecionada(s).`}
+        {`${split(form.keywords).length} termos × ${form.cities.split('\n').filter((c) => c.trim()).length} cidades × ${form.devices === 'both' ? 2 : 1} dispositivos × ${form.rounds} rodadas = ${split(form.keywords).length * form.cities.split('\n').filter((c) => c.trim()).length * (form.devices === 'both' ? 2 : 1) * Number(form.rounds)} buscas planejadas. Teto: ${form.maxRequests} consultas, incluindo tentativas.`}
       </div>
       <p className="briefing-muted">
-        {system === 'serp'
-          ? 'A coleta usa uma campanha própria, com limite e prazo. Não dispara relatório, mensagem ou mudança de etapa.'
-          : 'A atualização prioriza o número de anunciantes e usa o volume de anúncios como desempate. Um resultado menor preserva a versão anterior válida. Você pode ajustar campanhas, termos e período antes de cada aprovação.'}
+        A coleta usa uma campanha própria, com limite e prazo. Não dispara relatório, mensagem ou
+        mudança de etapa.
       </p>
       <button
         className="primary"
-        disabled={
-          busy ||
-          !data.enabled[system] ||
-          !data.scope?.confirmedAt ||
-          (system === 'serp' && !form.cities.trim()) ||
-          (system === 'reports' && !form.campaignIds.length)
-        }
+        disabled={busy || !data.enabled[system] || !data.scope?.confirmedAt || !form.cities.trim()}
       >
         {busy ? 'Conferindo dados…' : 'Revisar aprovação individual'}
       </button>
@@ -853,6 +640,13 @@ export function ProjectWorkspace({ snapshot, system, onOpen, onBack, onComplete 
                   </p>
                 )}
               </div>
+              {system === 'reports' && (
+                <ReportResult
+                  job={data.executions.find(
+                    (e) => e.system === 'reports' && ['completed', 'preserved'].includes(e.status),
+                  )}
+                />
+              )}
               <Facts system={system} data={data} busy={busy} onPrioritize={setPriorityCampaign} />
               <button
                 className="primary"
@@ -866,16 +660,26 @@ export function ProjectWorkspace({ snapshot, system, onOpen, onBack, onComplete 
               </button>
             </>
           )}
-          {tab === 'custom' && (
-            <Proposal
-              key={system}
-              system={system}
-              data={data}
-              onPrepare={prepare}
-              onConfirmScope={openScope}
-              busy={busy}
-            />
-          )}{' '}
+          {tab === 'custom' &&
+            (system === 'reports' ? (
+              <ReportProposal
+                key={job?.status === 'draft' ? job.id : 'new-report'}
+                draft={job?.status === 'draft' ? job : null}
+                data={data}
+                onPrepare={prepare}
+                onConfirmScope={openScope}
+                busy={busy}
+              />
+            ) : (
+              <Proposal
+                key={system}
+                system={system}
+                data={data}
+                onPrepare={prepare}
+                onConfirmScope={openScope}
+                busy={busy}
+              />
+            ))}
           {tab === 'execution' &&
             (job ? (
               <article className="project-approval">
@@ -884,7 +688,14 @@ export function ProjectWorkspace({ snapshot, system, onOpen, onBack, onComplete 
                   <span>{job.assignee.name}</span>
                 </div>
                 <p>{job.reason}</p>
-                <ScopeSummary p={job.parameters} />
+                {system === 'reports' && job.status !== 'draft' ? (
+                  <details>
+                    <summary>Parâmetros aprovados</summary>
+                    <ScopeSummary p={job.parameters} />
+                  </details>
+                ) : (
+                  <ScopeSummary p={job.parameters} />
+                )}
                 {job.status === 'draft' ? (
                   <>
                     <p className="briefing-muted">
@@ -922,6 +733,7 @@ export function ProjectWorkspace({ snapshot, system, onOpen, onBack, onComplete 
                         {job.result?.message ||
                           'Pedido registrado. O acompanhamento não inicia outra execução.'}
                       </p>
+                      {system === 'reports' && <ReportResult job={job} />}
                       {job.result?.planned !== undefined && (
                         <p>
                           {job.result.completed} / {job.result.planned} buscas concluídas ·{' '}

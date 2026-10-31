@@ -39,7 +39,12 @@ A prova de revisão ignora apenas `queue_detail.observed_at` e a posição relat
 na fila (`tasks_ahead`); alterações de escopo, identidade, configuração, contagens
 da campanha ou responsável continuam invalidando a aprovação.
 
-
 ### Seleção de cidades no CRM
 
 O reprocessamento SERP usa seleção múltipla com busca sem acentos e remoção individual, até 10 cidades por proposta. O catálogo inicial reúne as 39 localidades das listas de monitoramento e capitais do SERP Monitor (`src/lib/constants.ts`, commit `2d91c87`), sem consultas pagas para carregar opções. Cidades já presentes nas campanhas ou na seleção também permanecem disponíveis; valores existentes não são reescritos silenciosamente. A interface mostra nomes legíveis, enquanto a proposta mantém o valor exato esperado pelo SERP (por exemplo `São Paulo,Brazil`). Novas escolhas continuam exigindo a revisão e aprovação individual da proposta.
+
+## Reprocessamento do Report Engine
+
+A tela prioriza período e coletas concluídas. Marca, domínio e relatório identificam o destino no cabeçalho; quando há mais de um relatório, a seleção mantém o escopo correspondente. As palavras-chave ficam em filtros avançados e só oferecem termos das coletas selecionadas. A lista e o servidor usam o mesmo critério de elegibilidade: captura concluída no período, cobertura completa, nenhuma falha terminal e fila zerada, sem execução pendente ou ativa. Alterar o período recalcula as opções; escolhas manuais são preservadas onde continuam elegíveis. Até 20 coletas e 20 termos por proposta.
+
+A revisão coleta responsável e justificativa, salva uma proposta sem executar e mantém a aprovação individual explícita no passo seguinte. Revisar os parâmetros de uma proposta salva recupera suas escolhas. O resultado exibe anunciantes distintos antes e depois a partir do recibo durável do Report Engine, inclusive quando a versão anterior é preservada. Dados ausentes são apresentados como não informados, nunca como zero. A última execução concluída também aparece na aba Análise; não é necessário repetir o reprocessamento para consultá-la.

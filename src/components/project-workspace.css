@@ -382,3 +382,213 @@
     flex-wrap: wrap;
   }
 }
+
+.report-identity,
+.report-section-heading,
+.report-form-actions,
+.report-selection-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.report-identity {
+  border-bottom: 1px solid #d8e3e5;
+  padding-bottom: 16px;
+  margin-bottom: 20px;
+}
+.report-identity strong {
+  font-size: 18px;
+}
+.report-identity span,
+.report-identity small,
+.report-selection-summary span {
+  display: block;
+  color: #526b76;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.report-identity small {
+  font-size: 12px;
+}
+.report-period {
+  margin-bottom: 20px;
+}
+.report-selection-summary {
+  align-self: end;
+  padding: 9px 12px;
+  border-radius: 7px;
+  background: #edf5f3;
+  line-height: 1.5;
+  font-size: 14px;
+}
+.report-collections {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+}
+.report-collections legend,
+.report-comparison h3,
+.report-proposal h3 {
+  font-weight: 600;
+}
+.report-section-heading {
+  margin: 8px 0 12px;
+}
+.report-section-heading small,
+.report-collections > small,
+.report-comparison small {
+  color: #526b76;
+  font-size: 12px;
+}
+.report-selection-actions .text-action {
+  min-height: 36px;
+  font-size: 13px;
+}
+.report-collection-list {
+  border: 1px solid #d8e3e5;
+  border-radius: 8px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.report-collection {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  cursor: pointer;
+  font-size: 14px;
+}
+.report-collection + .report-collection {
+  border-top: 1px solid #d8e3e5;
+}
+.report-collection strong {
+  font-weight: 500;
+}
+.report-collection small {
+  display: block;
+  font-size: 12px;
+  color: #526b76;
+  overflow-wrap: anywhere;
+}
+.report-collection:has(input:checked) {
+  background: #f2f8f6;
+}
+.report-collection:has(input:disabled) {
+  opacity: 0.6;
+  cursor: default;
+}
+.report-collections > small {
+  display: block;
+  margin-top: 10px;
+}
+.report-collection input,
+.report-term-list input {
+  width: 17px;
+  height: 17px;
+  accent-color: #267d79;
+}
+.report-proposal input:focus-visible {
+  outline: 2px solid #267d79;
+  outline-offset: 3px;
+}
+.report-empty {
+  padding: 16px;
+  background: #f4f8f8;
+  border-radius: 8px;
+  line-height: 1.5;
+}
+.report-filters {
+  border-top: 1px solid #d8e3e5;
+  margin-top: 20px;
+  padding-top: 16px;
+}
+.report-filters p {
+  font-size: 13px;
+  line-height: 1.5;
+  color: #526b76;
+  margin: 12px 0;
+}
+.report-filters fieldset {
+  min-width: 0;
+}
+.report-filters legend {
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+.report-term-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.report-term-list label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.report-term-list input {
+  flex-shrink: 0;
+}
+.report-form-actions {
+  justify-content: flex-end;
+  margin-top: 20px;
+}
+.report-comparison {
+  padding: 18px;
+  margin: 18px 0;
+  background: #edf5f3;
+  border: 1px solid #c4dcd7;
+  border-radius: 10px;
+}
+.report-comparison-values {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 16px;
+}
+.report-comparison-values dt {
+  font-size: 13px;
+  color: #526b76;
+}
+.report-comparison-values dd {
+  font-size: 24px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.report-comparison-values > span {
+  color: #267d79;
+}
+.report-comparison > p {
+  font-size: 14px;
+  margin-top: 12px;
+}
+.project-result > div {
+  min-width: 0;
+  flex: 1;
+}
+@media (hover: hover) and (pointer: fine) {
+  .report-collection:hover {
+    background: #edf5f3;
+  }
+}
+@media (max-width: 700px) {
+  .report-collection {
+    grid-template-columns: 18px minmax(0, 1fr);
+  }
+  .report-collection > small {
+    grid-column: 2;
+  }
+  .report-term-list {
+    grid-template-columns: 1fr;
+  }
+  .report-form-actions {
+    justify-content: flex-start;
+  }
+}
