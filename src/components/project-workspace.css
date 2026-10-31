@@ -113,6 +113,146 @@
 .project-form-grid textarea {
   min-height: 76px;
 }
+.city-picker {
+  position: relative;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid #ccdce0;
+  border-radius: 9px;
+}
+.city-picker legend {
+  padding: 0 5px;
+  font-size: 14px;
+}
+.city-picker-heading,
+.city-picker-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.city-picker-heading > span,
+.city-picker-footer > span,
+.city-picker-chips > span {
+  color: #526b76;
+  font-size: 12px;
+}
+.city-picker-disclosure summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  list-style: none;
+  font-weight: 600;
+}
+.city-picker-disclosure summary::-webkit-details-marker {
+  display: none;
+}
+.city-picker-panel {
+  position: absolute;
+  z-index: 5;
+  top: 52px;
+  left: 0;
+  right: 0;
+  padding: 12px;
+  border: 1px solid #ccdce0;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 12px 28px #153b471c;
+}
+.city-picker-search {
+  display: flex;
+  align-items: center;
+  position: relative;
+}
+.city-picker-search > svg {
+  position: absolute;
+  left: 12px;
+  color: #617b84;
+  pointer-events: none;
+}
+.city-picker-search input {
+  padding-left: 38px;
+}
+.city-picker-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  max-height: 220px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  margin: 10px 0;
+}
+.project-form-grid .city-picker-option {
+  display: flex;
+  flex-direction: row;
+  gap: 9px;
+  align-items: center;
+  min-height: 42px;
+  padding: 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.city-picker-option input {
+  width: 17px;
+  min-height: 17px;
+  height: 17px;
+  padding: 0;
+  flex-shrink: 0;
+  accent-color: #267d79;
+}
+.city-picker-option:has(input:checked) {
+  background: #edf5f3;
+}
+.city-picker-option:has(input:disabled) {
+  opacity: 0.5;
+  cursor: default;
+}
+.city-picker-options p {
+  grid-column: 1/-1;
+  padding: 12px;
+  font-size: 14px;
+}
+.city-picker-footer {
+  border-top: 1px solid #d8e3e5;
+  padding-top: 10px;
+}
+.city-picker-footer button {
+  color: #267d79;
+  font-weight: 600;
+  min-height: 36px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.city-picker-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding-top: 8px;
+}
+.city-picker-chips button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 6px 10px;
+  border-radius: 7px;
+  background: #edf5f3;
+  border: 1px solid #c4dcd7;
+  color: #195b58;
+  font-size: 13px;
+}
+.city-picker input:focus-visible {
+  outline: 2px solid #267d79;
+  outline-offset: 2px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .city-picker-option:hover {
+    background: #f3f7f7;
+  }
+  .city-picker-chips button:hover {
+    background: #dcece7;
+  }
+}
 .project-proposal > p {
   margin: 18px 0;
 }
@@ -222,6 +362,9 @@
   text-decoration: underline;
 }
 @media (max-width: 700px) {
+  .city-picker-options {
+    grid-template-columns: 1fr;
+  }
   .project-launchers,
   .project-facts,
   .project-form-grid,

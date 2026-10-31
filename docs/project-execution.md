@@ -38,3 +38,8 @@ permissão. O teto automático do SERP permanece inalterado.
 A prova de revisão ignora apenas `queue_detail.observed_at` e a posição relativa
 na fila (`tasks_ahead`); alterações de escopo, identidade, configuração, contagens
 da campanha ou responsável continuam invalidando a aprovação.
+
+
+### Seleção de cidades no CRM
+
+O reprocessamento SERP usa seleção múltipla com busca sem acentos e remoção individual, até 10 cidades por proposta. O catálogo inicial reúne as 39 localidades das listas de monitoramento e capitais do SERP Monitor (`src/lib/constants.ts`, commit `2d91c87`), sem consultas pagas para carregar opções. Cidades já presentes nas campanhas ou na seleção também permanecem disponíveis; valores existentes não são reescritos silenciosamente. A interface mostra nomes legíveis, enquanto a proposta mantém o valor exato esperado pelo SERP (por exemplo `São Paulo,Brazil`). Novas escolhas continuam exigindo a revisão e aprovação individual da proposta.
