@@ -7,6 +7,7 @@ import { buildSources } from './sources.js';
 import { companyContext } from './company-context.js';
 import { scopeDefaults } from './preparation.js';
 import { operationalPreparation } from './operational-advice.js';
+import { reportBaseline } from '../src/services/report-baseline.js';
 import { reportCampaigns } from '../src/services/report-evidence.js';
 const text = z.string().trim().min(1).max(150);
 export const projectParameters = z.union([
@@ -83,30 +84,48 @@ const publicJob = ({ command, proof, user_id, ...row }) => {
 };
 const records = (pages) =>
   Object.fromEntries(latestOperations(pages).map((p) => [p.payload.data.id, p.payload.data]));
-export function executionProof(ops, scope, current, system) {
+export function executionProof(ops, scope, current, system, parameters) {
   const serp = ops.serp?.facts;
   const reports = ops.reports?.facts?.products?.find((p) => p.product === 'bb');
-  return digest({
-    scope,
-    org: idOf(current.org_id),
-    stage: current.stage_id,
-    pipeline: current.pipeline_id,
-    serp: serp && {
-      state: serp.state,
-      coverage: serp.coverage,
-      campaigns: serp.campaigns.map(({ queue_detail, ...c }) => ({
-        ...c,
-        queue_detail:
-          queue_detail &&
-          Object.fromEntries(
-            Object.entries(queue_detail).filter(
-              ([k]) => !['observed_at', 'tasks_ahead'].includes(k),
+  const scoped = system === 'reports' && parameters;
+  const campaigns = scoped
+    ? serp?.campaigns
+        .filter((c) => parameters.campaignIds.includes(c.id))
+        .sort((a, b) => a.id.localeCompare(b.id))
+    : serp?.campaigns;
+  return (
+    (scoped ? 'v2:' : '') +
+    digest({
+      scope,
+      parameters: scoped ? parameters : undefined,
+      org: idOf(current.org_id),
+      stage: current.stage_id,
+      pipeline: current.pipeline_id,
+      serp: serp && {
+        state: serp.state,
+        coverage: serp.coverage,
+        campaigns: campaigns.map(({ queue_detail, ...c }) => ({
+          ...c,
+          queue_detail:
+            queue_detail &&
+            Object.fromEntries(
+              Object.entries(queue_detail).filter(
+                ([k]) => !['observed_at', 'tasks_ahead'].includes(k),
+              ),
             ),
-          ),
-      })),
-    },
-    reports: system === 'reports' ? reports : undefined,
-  });
+        })),
+      },
+      reports: scoped
+        ? {
+            state: reports?.state,
+            scope: reports?.scope,
+            reports: reports?.reports.filter((r) => r.slug === parameters.slug),
+          }
+        : system === 'reports'
+          ? reports
+          : undefined,
+    })
+  );
 }
 export function validateParameters(params, scope, ops) {
   if (!scope?.confirmedAt) fail('Confirme o escopo comercial em Pendências antes de executar.');
@@ -302,7 +321,18 @@ export async function projectAction(input, ctx) {
           status: 'draft',
           parameters: params,
           command,
-          proof: executionProof(ops, scope, current, system),
+          proof: executionProof(ops, scope, current, system, params),
+          result:
+            system === 'reports'
+              ? {
+                  review: reportBaseline(
+                    ops.reports.facts.products
+                      .find((p) => p.product === 'bb')
+                      .reports.find((r) => r.slug === params.slug),
+                    params.lookbackDays,
+                  ),
+                }
+              : null,
           assignee: { id: input.assigneeId, name: owner.name },
           reason: input.reason,
           expires_at: new Date(Date.now() + 15 * 60000).toISOString(),
@@ -336,7 +366,15 @@ export async function projectAction(input, ctx) {
     });
     const ops = records(pages);
     validateParameters(row.parameters, scope, ops);
-    if (executionProof(ops, scope, current, row.system) !== row.proof)
+    if (
+      executionProof(
+        ops,
+        scope,
+        current,
+        row.system,
+        row.proof.startsWith('v2:') ? row.parameters : undefined,
+      ) !== row.proof
+    )
       fail('Os dados mudaram desde a revisão. Prepare uma nova proposta.');
     const owner = (await client.get('/api/v1/users')).data?.find(
       (p) => String(p.id) === row.assignee.id && p.active_flag !== false && p.active_flag !== 0,

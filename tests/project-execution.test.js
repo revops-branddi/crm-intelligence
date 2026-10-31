@@ -392,3 +392,69 @@ test('existing queue priority requires individual approval and uses its own endp
     /Atualize/,
   );
 });
+
+test('report approval ignores unselected campaigns but detects selected evidence and report changes', async () => {
+  const c = setup();
+  c.data.monitoring.campaigns = [
+    structuredClone(completedCampaign),
+    { ...structuredClone(campaign), id: 'other', queued_tasks: 2 },
+  ];
+  Object.assign(c.data.monitoring.campaigns[0].executions[0], {
+    id: 'e1',
+    started_at: new Date().toISOString(),
+    total_tasks: 12,
+    completed_tasks: 12,
+    error_tasks: 0,
+    tasks_with_ads: 1,
+    num_competitors: 1,
+  });
+  const params = {
+    system: 'reports',
+    brand: 'Marca',
+    domain: 'marca.test',
+    slug: 'crm-17-bb',
+    mode: 'generate',
+    lookbackDays: 30,
+    keywords: ['marca'],
+    campaignIds: ['c1'],
+  };
+  const p = await projectAction(
+    {
+      action: 'prepareProjectAction',
+      parameters: params,
+      assigneeId: '4',
+      reason: 'Atualizar evidências',
+    },
+    c.ctx,
+  );
+  assert.equal(p.execution.result.review.exists, false);
+  c.data.monitoring.campaigns[1].queued_tasks = 1;
+  await projectAction({ action: 'approveProjectAction', executionId: p.execution.id }, c.ctx);
+  assert.equal(c.calls.filter((c) => c.init?.method === 'POST').length, 1);
+  const ops = { serp: { facts: c.data.monitoring }, reports: { facts: c.data.reports } };
+  const proof = executionProof(ops, scope, c.ctx.currentDeal, 'reports', params);
+  c.data.monitoring.campaigns[0].configuration.keywords = ['changed'];
+  assert.notEqual(executionProof(ops, scope, c.ctx.currentDeal, 'reports', params), proof);
+});
+test('report proof binds report version and keeps legacy proof compatible', () => {
+  const ops = {
+    serp: { facts: { state: 'complete', campaigns: [completedCampaign] } },
+    reports: {
+      facts: {
+        products: [
+          {
+            product: 'bb',
+            state: 'found',
+            reports: [{ slug: 'marca', generated_at: '2026-10-20' }],
+          },
+        ],
+      },
+    },
+  };
+  const params = { campaignIds: ['c1'], slug: 'marca' };
+  const before = executionProof(ops, scope, {}, 'reports', params);
+  assert.match(before, /^v2:/);
+  assert.doesNotMatch(executionProof(ops, scope, {}, 'reports'), /^v2:/);
+  ops.reports.facts.products[0].reports[0].generated_at = '2026-10-21';
+  assert.notEqual(executionProof(ops, scope, {}, 'reports', params), before);
+});
