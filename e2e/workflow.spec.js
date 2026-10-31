@@ -1311,3 +1311,26 @@ test('report empty state prevents preparing an action with pending collections',
     calls.filter((c) => ['prepareProjectAction', 'approveProjectAction'].includes(c.action)),
   ).toHaveLength(0);
 });
+
+test('report review shows expired baseline and keeps individual approval inert', async ({
+  page,
+}) => {
+  const calls = await fixture(page, {
+    cached: true,
+    projectOptions: { baselineDate: '2026-01-01T12:00:00Z' },
+  });
+  await page.getByLabel('ID do negócio').fill('7');
+  await page.getByRole('button', { name: 'Analisar negócio', exact: true }).click();
+  await page.getByRole('button', { name: /Report Engine Evidências/ }).click();
+  await page.getByRole('button', { name: 'Personalizar reprocessamento' }).click();
+  const baseline = page.getByRole('region', { name: 'Versão publicada antes da aprovação' });
+  await expect(baseline).toContainText('Antes · anunciantes publicados');
+  await expect(baseline).toContainText('menos de 5 anunciantes');
+  await page.getByRole('button', { name: 'Revisar aprovação individual', exact: true }).click();
+  await page.getByRole('button', { name: 'Salvar proposta para aprovação', exact: true }).click();
+  await expect(baseline).toContainText('01/01/2026');
+  await expect(
+    page.getByRole('button', { name: 'Aprovar e executar no Report Engine' }),
+  ).toBeDisabled();
+  expect(calls.filter((c) => c.action === 'approveProjectAction')).toHaveLength(0);
+});

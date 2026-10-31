@@ -1,3 +1,5 @@
+import { ReportBaseline } from './ReportBaseline';
+import { reportBaseline } from '../services/report-baseline';
 import { useState } from 'react';
 import { reportCampaigns, reportKeywords, completedCaptures } from '../services/report-evidence';
 import { ScopeSummary } from './ProjectScopeSummary';
@@ -295,11 +297,11 @@ export function ReportProposal({ data, draft, onPrepare, onConfirmScope, busy })
             <p role="alert">Selecione ao menos uma palavra-chave nos filtros avançados.</p>
           )}
           <p className="briefing-muted">
-            Combina as evidências sem duplicar anunciantes. Preserva a versão anterior quando o novo
-            resultado perde volume ou qualidade.
+            Combina as evidências das coletas selecionadas sem duplicar anunciantes.
           </p>
         </>
       )}
+      <ReportBaseline baseline={reportBaseline(report, days)} />
       {error && (
         <p role="alert" className="briefing-note">
           {error}

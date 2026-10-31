@@ -5,6 +5,7 @@ import { ScopeForm } from './PreparationWorkflow';
 import { DetailSheet } from './DetailSheet';
 import { ScopeSummary } from './ProjectScopeSummary';
 import { ReportProposal } from './ReportProposal';
+import { ReportBaseline } from './ReportBaseline';
 import { ReportResult } from './ReportResult';
 import { CityPicker } from './CityPicker';
 import './project-workspace.css';
@@ -491,6 +492,15 @@ export function ProjectWorkspace({ snapshot, system, onOpen, onBack, onComplete 
         .then(({ execution }) => {
           if (live) {
             setJob(execution);
+            setData(
+              (d) =>
+                d && {
+                  ...d,
+                  executions: (d.executions || []).map((e) =>
+                    e.id === execution.id ? execution : e,
+                  ),
+                },
+            );
             if (!pending(execution.status)) {
               apiRequest('projectContext', { snapshotId: snapshot.id, refresh: true })
                 .then((d) => {
@@ -702,9 +712,10 @@ export function ProjectWorkspace({ snapshot, system, onOpen, onBack, onComplete 
                 )}
                 {job.status === 'draft' ? (
                   <>
+                    {system === 'reports' && <ReportBaseline baseline={job.result?.review} />}
                     <p className="briefing-muted">
                       Proposta salva. Revise e aprove até {date(job.expires_at)}. Mudanças nas
-                      fontes exigem nova revisão.
+                      fontes selecionadas exigem nova revisão.
                     </p>
                     <label className="project-consent">
                       <input

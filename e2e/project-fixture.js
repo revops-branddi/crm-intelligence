@@ -1,3 +1,4 @@
+import { reportBaseline } from '../src/services/report-baseline.js';
 export function projectFixture({
   scopeConfirmed = true,
   multipleCampaigns = false,
@@ -6,6 +7,7 @@ export function projectFixture({
   reportStatus = 'completed',
   reportResult = { previousAdvertisers: 1, publishedAdvertisers: 4 },
   reportMetadataCount,
+  baselineDate,
 } = {}) {
   const jobs = [];
   const campaign = {
@@ -56,7 +58,7 @@ export function projectFixture({
                   advertisers_count: 1,
                   status: 'completed',
                   linked_in_crm: true,
-                  generated_at: '2026-10-20T12:00:00Z',
+                  generated_at: baselineDate || '2026-10-20T12:00:00Z',
                   url: 'https://report.branddi.com/report/lume',
                 },
               ],
@@ -113,6 +115,15 @@ export function projectFixture({
         parameters: request.parameters,
         assignee: context.assignees.find((p) => p.id === request.assigneeId),
         reason: request.reason,
+        result:
+          request.parameters.system === 'reports'
+            ? {
+                review: reportBaseline(
+                  context.operations.reports.facts.products[0].reports[0],
+                  request.parameters.lookbackDays,
+                ),
+              }
+            : null,
         created_at: new Date().toISOString(),
       };
       jobs.push(j);
