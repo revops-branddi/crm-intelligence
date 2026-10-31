@@ -1226,6 +1226,15 @@ for (const scenario of [
     message: '+2 anunciantes distintos',
   },
   {
+    name: 'legacy',
+    status: 'completed',
+    counts: { previousAdvertisers: 2, publishedAdvertisers: 5 },
+    before: 'Não informado',
+    after: '4',
+    message: 'Recibo antigo:',
+    legacy: true,
+  },
+  {
     name: 'missing',
     status: 'completed',
     counts: {},
@@ -1239,7 +1248,19 @@ for (const scenario of [
   }) => {
     const calls = await fixture(page, {
       cached: true,
-      projectOptions: { reportStatus: scenario.status, reportResult: scenario.counts },
+      projectOptions: {
+        reportStatus: scenario.status,
+        reportResult: scenario.legacy
+          ? scenario.counts
+          : {
+              publishedComparison: {
+                metric: 'effective_advertisers_v1',
+                before: scenario.counts.previousAdvertisers,
+                after: scenario.counts.publishedAdvertisers,
+              },
+            },
+        reportMetadataCount: scenario.legacy ? 4 : undefined,
+      },
     });
     await page.getByLabel('ID do negócio').fill('7');
     await page.getByRole('button', { name: 'Analisar negócio', exact: true }).click();
