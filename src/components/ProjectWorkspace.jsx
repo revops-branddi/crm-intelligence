@@ -4,6 +4,7 @@ import { apiRequest } from '../services/api';
 import { ScopeForm } from './PreparationWorkflow';
 import { DetailSheet } from './DetailSheet';
 import { reportCampaigns, reportKeywords } from '../services/report-evidence';
+import { CityPicker } from './CityPicker';
 import './project-workspace.css';
 const names = { serp: 'SERP Monitor', reports: 'Report Engine' };
 const labels = {
@@ -514,15 +515,11 @@ function Proposal({ system, data, onPrepare, onConfirmScope, busy }) {
         </label>
         {system === 'serp' ? (
           <>
-            <label className="full">
-              Cidades, uma por linha (até 10)
-              <textarea
-                required
-                maxLength={1000}
-                value={form.cities}
-                onChange={(e) => change('cities', e.target.value)}
-              />
-            </label>
+            <CityPicker
+              value={form.cities.split('\n').filter((c) => c.trim())}
+              available={camps.flatMap((c) => c.configuration?.cities || [])}
+              onChange={(cities) => change('cities', cities.join('\n'))}
+            />
             <label>
               Dispositivos
               <select value={form.devices} onChange={(e) => change('devices', e.target.value)}>
@@ -632,6 +629,7 @@ function Proposal({ system, data, onPrepare, onConfirmScope, busy }) {
           busy ||
           !data.enabled[system] ||
           !data.scope?.confirmedAt ||
+          (system === 'serp' && !form.cities.trim()) ||
           (system === 'reports' && !form.campaignIds.length)
         }
       >

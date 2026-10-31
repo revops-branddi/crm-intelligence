@@ -916,16 +916,26 @@ test('monitoring can be customized before scope confirmation and saved as an una
   await page.getByRole('button', { name: 'Analisar negócio', exact: true }).click();
   await page.getByRole('button', { name: /SERP Monitor Cobertura/ }).click();
   await page.getByRole('button', { name: 'Personalizar reprocessamento' }).click();
-  await page.getByLabel('Cidades, uma por linha').fill('São Paulo,Brazil\nRecife,Brazil');
+  await page.getByRole('button', { name: 'Remover cidade Campinas', exact: true }).click();
+  await page.getByText('Selecionar cidades', { exact: true }).click();
+  await page.getByRole('searchbox', { name: 'Buscar cidade' }).fill('recife');
+  await page.getByRole('checkbox', { name: 'Recife', exact: true }).check();
+  await page.getByRole('button', { name: 'Concluir seleção' }).click();
   await page.getByLabel('Teto total de consultas').fill('48');
   await expect(page.getByRole('button', { name: 'Revisar aprovação individual' })).toBeDisabled();
   await page.getByRole('button', { name: 'Confirmar escopo aqui' }).click();
   await page.getByRole('dialog').getByLabel('Produto', { exact: true }).fill('Brand Bidding');
   await page.getByRole('button', { name: 'Salvar escopo' }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
-  await expect(page.getByLabel('Cidades, uma por linha')).toHaveValue(
-    'São Paulo,Brazil\nRecife,Brazil',
-  );
+  await expect(
+    page.getByRole('button', { name: 'Remover cidade Recife', exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Remover cidade São Paulo', exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Remover cidade Campinas', exact: true }),
+  ).toHaveCount(0);
   await expect(page.getByLabel('Teto total de consultas')).toHaveValue('48');
   await page
     .getByLabel('Objetivo deste reprocessamento')
@@ -1044,4 +1054,68 @@ test('existing ready queue can be prioritized only after its own explicit approv
   await page.getByRole('button', { name: 'Aprovar e executar no SERP Monitor' }).click();
   await expect(page.getByText('Pedido recebido pelo projeto.')).toBeVisible();
   expect(calls.filter((c) => c.action === 'approveProjectAction')).toHaveLength(1);
+});
+
+test('city picker searches without accents, preserves exact payload and caps selection at ten', async ({
+  page,
+}) => {
+  const calls = await fixture(page, { cached: true, company: true });
+  await page.getByLabel('ID do negócio').fill('7');
+  await page.getByRole('button', { name: 'Analisar negócio', exact: true }).click();
+  await page.getByRole('button', { name: /SERP Monitor Cobertura/ }).click();
+  await page.getByRole('button', { name: 'Personalizar reprocessamento' }).click();
+  await page.getByText('Selecionar cidades', { exact: true }).click();
+  const search = page.getByRole('searchbox', { name: 'Buscar cidade' });
+  await search.fill('sao jose');
+  const city = page.getByRole('checkbox', { name: 'São José dos Campos', exact: true });
+  await city.focus();
+  await page.keyboard.press('Space');
+  await expect(city).toBeChecked();
+  await expect(
+    page.getByRole('button', { name: 'Remover cidade São José dos Campos' }),
+  ).toHaveCount(1);
+  await search.fill('zzzz');
+  await expect(page.getByText('Nenhuma cidade encontrada. Tente outro nome.')).toBeVisible();
+  await search.fill('');
+  for (const name of [
+    'Recife',
+    'Natal',
+    'Manaus',
+    'Salvador',
+    'Fortaleza',
+    'Curitiba',
+    'Guarulhos',
+  ]) {
+    await page.getByRole('checkbox', { name, exact: true }).check();
+  }
+  await expect(page.getByText('10 de 10 selecionadas', { exact: true })).toBeVisible();
+  await expect(page.getByRole('checkbox', { name: 'Santos', exact: true })).toBeDisabled();
+  await page.keyboard.press('Escape');
+  await expect(search).not.toBeVisible();
+  await page.getByRole('button', { name: 'Remover cidade Campinas', exact: true }).click();
+  await page.getByText('Selecionar cidades', { exact: true }).click();
+  await page.getByRole('checkbox', { name: 'Santos', exact: true }).check();
+  await page.setViewportSize({ width: 390, height: 844 });
+  const panel = await page.locator('.city-picker-panel').boundingBox();
+  expect(panel.x).toBeGreaterThanOrEqual(0);
+  expect(panel.x + panel.width).toBeLessThanOrEqual(390);
+  await page.getByRole('button', { name: 'Concluir seleção' }).click();
+  await page
+    .getByLabel('Objetivo deste reprocessamento')
+    .fill('Validar seleção de cidades sem digitação de códigos.');
+  await page.getByRole('button', { name: 'Revisar aprovação individual' }).click();
+  const params = calls.find((c) => c.action === 'prepareProjectAction').parameters;
+  expect(params.cities).toEqual([
+    'São Paulo,Brazil',
+    'São José dos Campos,Brazil',
+    'Recife,Brazil',
+    'Natal,Brazil',
+    'Manaus,Brazil',
+    'Salvador,Brazil',
+    'Fortaleza,Brazil',
+    'Curitiba,Brazil',
+    'Guarulhos,Brazil',
+    'Santos,Brazil',
+  ]);
+  expect(calls.filter((c) => c.action === 'approveProjectAction')).toHaveLength(0);
 });
