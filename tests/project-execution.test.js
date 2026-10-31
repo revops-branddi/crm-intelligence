@@ -23,6 +23,18 @@ const campaign = {
   },
   executions: [],
 };
+const completedCampaign = {
+  ...campaign,
+  executions: [
+    {
+      status: 'completed',
+      finished_at: new Date().toISOString(),
+      planned_tasks: 12,
+      queue_completed_tasks: 12,
+      terminal_queue_failures: 0,
+    },
+  ],
+};
 const scope = {
   brands: ['Marca'],
   domains: ['marca.test'],
@@ -198,6 +210,7 @@ test('scope, ceiling, ongoing capture, report terms and clock semantics are vali
     mode: 'generate',
     slug: 'crm-17-bb',
     campaignIds: ['c1'],
+    lookbackDays: 30,
     keywords: ['wrong'],
   };
   assert.throws(() => validateParameters(p, scope, ops));
@@ -227,9 +240,9 @@ test('report selection can combine campaign-specific keywords without admitting 
       facts: {
         state: 'complete',
         campaigns: [
-          campaign,
+          completedCampaign,
           {
-            ...campaign,
+            ...completedCampaign,
             id: 'c2',
             configuration: { ...campaign.configuration, keywords: ['marca promoção'] },
           },
@@ -248,12 +261,52 @@ test('report selection can combine campaign-specific keywords without admitting 
     mode: 'generate',
     slug: 'crm-17-bb',
     campaignIds: ['c1', 'c2'],
+    lookbackDays: 30,
     keywords: ['marca', 'marca promoção'],
   };
   assert.doesNotThrow(() => validateParameters(p, scope, ops));
   assert.throws(() => validateParameters({ ...p, keywords: ['outra marca'] }, scope, ops));
   ops.serp.facts.campaigns[1].queued_tasks = 1;
   assert.throws(() => validateParameters(p, scope, ops));
+});
+
+test('report approval rejects unfinished, stale and unknown coverage even if the queue says zero', () => {
+  const params = {
+    system: 'reports',
+    brand: 'Marca',
+    domain: 'marca.test',
+    mode: 'generate',
+    slug: 'crm-17-bb',
+    campaignIds: ['c1'],
+    keywords: ['marca'],
+    lookbackDays: 30,
+  };
+  const ops = {
+    serp: { status: 'read', facts: { state: 'complete', campaigns: [] } },
+    reports: {
+      status: 'read',
+      facts: { products: [{ product: 'bb', state: 'not_found', reports: [] }] },
+    },
+  };
+  for (const patch of [
+    { queued_tasks: null },
+    { executions: [{ ...completedCampaign.executions[0], status: 'running' }] },
+    { executions: [{ ...completedCampaign.executions[0], queue_completed_tasks: 1 }] },
+    { executions: [{ ...completedCampaign.executions[0], terminal_queue_failures: 1 }] },
+    {
+      executions: [
+        {
+          ...completedCampaign.executions[0],
+          finished_at: new Date(Date.now() - 31 * 86400000).toISOString(),
+        },
+      ],
+    },
+  ]) {
+    ops.serp.facts.campaigns = [{ ...completedCampaign, ...patch }];
+    assert.throws(() => validateParameters(params, scope, ops), /concluídas neste período/);
+  }
+  ops.serp.facts.campaigns = [completedCampaign];
+  assert.doesNotThrow(() => validateParameters(params, scope, ops));
 });
 
 test('refreshed queue observation clock never invalidates approval; material queue changes still do', () => {

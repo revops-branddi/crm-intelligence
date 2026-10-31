@@ -7,6 +7,7 @@ import { buildSources } from './sources.js';
 import { companyContext } from './company-context.js';
 import { scopeDefaults } from './preparation.js';
 import { operationalPreparation } from './operational-advice.js';
+import { reportCampaigns } from '../src/services/report-evidence.js';
 const text = z.string().trim().min(1).max(150);
 export const projectParameters = z.union([
   z
@@ -166,9 +167,10 @@ export function validateParameters(params, scope, ops) {
     if (params.mode === 'generate' && !params.slug.startsWith('crm-'))
       fail('Use o identificador proposto para a nova geração.');
     const availableKeywords = new Set();
+    const eligible = reportCampaigns(camps, params.lookbackDays);
     for (const id of params.campaignIds) {
-      const c = camps.find((c) => c.id === id);
-      if (!c || c.queued_tasks > 0) fail('Selecione uma campanha deste deal sem coleta pendente.');
+      const c = eligible.find((c) => c.id === id);
+      if (!c) fail('Selecione coletas concluídas neste período e sem fila pendente.');
       for (const keyword of c.configuration.keywords || []) availableKeywords.add(keyword);
     }
     if (params.keywords.some((k) => !availableKeywords.has(k)))
