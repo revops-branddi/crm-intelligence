@@ -5,6 +5,7 @@ export function projectFixture({
   mixedCampaigns = false,
   reportStatus = 'completed',
   reportResult = { previousAdvertisers: 1, publishedAdvertisers: 4 },
+  reportMetadataCount,
 } = {}) {
   const jobs = [];
   const campaign = {
@@ -138,6 +139,11 @@ export function projectFixture({
           },
         }),
       };
+      if (j.system === 'reports' && Number.isInteger(reportMetadataCount)) {
+        const r = context.operations.reports.facts.products[0].reports[0];
+        r.generated_at = j.result.result.generatedAt;
+        r.advertisers_count = reportMetadataCount;
+      }
     }
     return { execution: j };
   };

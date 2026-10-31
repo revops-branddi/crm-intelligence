@@ -642,6 +642,10 @@ export function ProjectWorkspace({ snapshot, system, onOpen, onBack, onComplete 
               </div>
               {system === 'reports' && (
                 <ReportResult
+                  reports={
+                    data.operations.reports?.facts?.products.find((p) => p.product === 'bb')
+                      ?.reports
+                  }
                   job={data.executions.find(
                     (e) => e.system === 'reports' && ['completed', 'preserved'].includes(e.status),
                   )}
@@ -733,7 +737,15 @@ export function ProjectWorkspace({ snapshot, system, onOpen, onBack, onComplete 
                         {job.result?.message ||
                           'Pedido registrado. O acompanhamento não inicia outra execução.'}
                       </p>
-                      {system === 'reports' && <ReportResult job={job} />}
+                      {system === 'reports' && (
+                        <ReportResult
+                          job={job}
+                          reports={
+                            data.operations.reports?.facts?.products.find((p) => p.product === 'bb')
+                              ?.reports
+                          }
+                        />
+                      )}
                       {job.result?.planned !== undefined && (
                         <p>
                           {job.result.completed} / {job.result.planned} buscas concluídas ·{' '}

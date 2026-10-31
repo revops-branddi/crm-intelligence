@@ -1,11 +1,22 @@
 const count = (value) => (Number.isInteger(value) && value >= 0 ? value : null);
 
-export function ReportResult({ job }) {
+export function ReportResult({ job, reports = [] }) {
   if (!job || !['completed', 'preserved'].includes(job.status)) return null;
   // CRM stores the original project receipt, including its nested result.
   const receipt = job.result?.result;
-  const before = count(receipt?.previousAdvertisers);
-  const after = count(receipt?.publishedAdvertisers);
+  // Legacy receipt volumes count rows for the quality guard, not the public KPI.
+  const comparison =
+    receipt?.publishedComparison?.metric === 'effective_advertisers_v1'
+      ? receipt.publishedComparison
+      : null;
+  const sameVersion = reports.find(
+    (r) =>
+      r.slug === job.parameters.slug &&
+      Number.isFinite(Date.parse(r.generated_at)) &&
+      Date.parse(r.generated_at) === Date.parse(receipt?.generatedAt),
+  );
+  const before = count(comparison?.before);
+  const after = count(comparison?.after) ?? count(sameVersion?.advertisers_count);
   const difference = before !== null && after !== null ? after - before : null;
   return (
     <section className="report-comparison" aria-label="Resultado do relatório">
@@ -32,7 +43,9 @@ export function ReportResult({ job }) {
         {job.status === 'preserved'
           ? 'A versão anterior foi preservada pela regra de volume e qualidade.'
           : difference === null
-            ? 'O recibo não informa a comparação completa.'
+            ? comparison
+              ? 'O recibo não informa a comparação completa.'
+              : 'Recibo antigo: a contagem publicada anterior não está disponível.'
             : difference > 0
               ? `+${difference} ${difference === 1 ? 'anunciante distinto' : 'anunciantes distintos'} no relatório.`
               : difference === 0
